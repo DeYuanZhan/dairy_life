@@ -22,6 +22,24 @@ export const MOODS: MoodDef[] = [
 export const moodOf = (k: MoodKey | null): MoodDef | null =>
   MOODS.find((m) => m.key === k) ?? null;
 
+/* ---------------- 天气 ---------------- */
+
+export type WeatherKey = "sunny" | "cloudy" | "rain" | "storm" | "snow" | "wind";
+
+export interface WeatherDef {
+  key: WeatherKey;
+  label: string;
+}
+
+export const WEATHERS: WeatherDef[] = [
+  { key: "sunny", label: "晴" },
+  { key: "cloudy", label: "多云" },
+  { key: "rain", label: "雨" },
+  { key: "storm", label: "雷雨" },
+  { key: "snow", label: "雪" },
+  { key: "wind", label: "风" },
+];
+
 /* ---------------- 数据结构 ---------------- */
 
 export interface WorkItem {
@@ -54,6 +72,8 @@ export interface DayData {
   mood: MoodKey | null;
   energy: number; // 1 - 10
   moodNote: string;
+  weather: WeatherKey | null;
+  place: string;
   workItems: WorkItem[];
   workNote: string;
   life: { food: string; clothing: string; home: string; transport: string };
@@ -82,6 +102,8 @@ export function emptyDay(): DayData {
     mood: null,
     energy: 6,
     moodNote: "",
+    weather: null,
+    place: "",
     workItems: [],
     workNote: "",
     life: { food: "", clothing: "", home: "", transport: "" },
@@ -237,6 +259,7 @@ export const uid = (): string =>
 /* ---------------- 内容完整度 ---------------- */
 
 export function hasContent(d: DayData): boolean {
+  if (d.weather || d.place.trim()) return true;
   if (d.mood || d.moodNote.trim()) return true;
   if (d.workItems.length || d.workNote.trim()) return true;
   if (Object.values(d.life).some((v) => v.trim())) return true;
@@ -490,4 +513,347 @@ export function buildSummary(d: DayData, date: Date, score: DayScore): string {
 
   if (d.selfScore > 0) L.push(`▸ 自评：${d.selfScore}/10 分`);
   return L.join("\n");
+}
+
+/* ---------------- 快速模板 ---------------- */
+
+export const WORK_TEMPLATES = ["回复邮件", "开晨会", "深度工作 2 小时", "写周报", "整理文档"];
+
+export const STUDY_TEMPLATES = ["英语", "专业课", "阅读", "刷题"];
+
+export const SLEEP_PRESETS = [
+  { label: "睡满 8 小时", bed: "23:00", wake: "07:00" },
+  { label: "7.5 小时", bed: "23:30", wake: "07:00" },
+  { label: "7 小时", bed: "00:00", wake: "07:00" },
+];
+
+export const MODULE_TIPS: Record<ModuleKey, string> = {
+  work: "明天先写下最重要的 3 件事，挑一件「硬骨头」放在上午啃。",
+  study: "从 25 分钟一个番茄钟开始，完成后记得勾「已检查」。",
+  sleep: "今晚把上床时间提前 30 分钟，睡前一小时放下手机。",
+  mood: "情绪没有对错，写下「为什么」比打分更有用。",
+  fitness: "哪怕 10 分钟拉伸也算数，先让身体动起来。",
+  life: "好好吃一顿饭，把「食」这一栏认真填上。",
+  records: "随手拍一张今天的天空，记录不需要仪式感。",
+  activities: "约一个朋友，或者给自己安排一场电影。",
+  image: "今晚多花 3 分钟护肤，明天穿一套让自己开心的搭配。",
+};
+
+/* ---------------- 洞察分析 ---------------- */
+
+export interface NightPoint {
+  key: string;
+  weekday: string;
+  hours: number | null;
+}
+
+export interface SleepStats {
+  nights: number;
+  avg: number | null;
+  debt: number | null;
+}
+
+export function lastNights(
+  endKey: string,
+  n: number,
+  override?: { key: string; data: DayData }
+): NightPoint[] {
+  const end = parseKey(endKey);
+  const out: NightPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = addDays(end, -i);
+    const k = keyOf(dt);
+    const d = override && override.key === k ? override.data : loadDay(k);
+    const h =
+      d.sleep.actBed && d.sleep.actWake ? sleepSpan(d.sleep.actBed, d.sleep.actWake) / 60 : null;
+    out.push({
+      key: k,
+      weekday: WEEKDAYS[dt.getDay()],
+      hours: h === null ? null : Math.round(h * 10) / 10,
+    });
+  }
+  return out;
+}
+
+export function sleepStats(nights: NightPoint[]): SleepStats {
+  const hs = nights.map((x) => x.hours).filter((h): h is number => h !== null);
+  if (!hs.length) return { nights: 0, avg: null, debt: null };
+  const debt = hs.reduce((s, h) => s + (8 - h), 0);
+  return {
+    nights: hs.length,
+    avg: Math.round((hs.reduce((a, b) => a + b, 0) / hs.length) * 10) / 10,
+    debt: Math.round(debt * 10) / 10,
+  };
+}
+
+export interface TrendPoint {
+  key: string;
+  label: string;
+  score: number | null;
+  mood: MoodKey | null;
+}
+
+export function trendOf(
+  endKey: string,
+  n: number,
+  override?: { key: string; data: DayData }
+): TrendPoint[] {
+  const end = parseKey(endKey);
+  const out: TrendPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = addDays(end, -i);
+    const k = keyOf(dt);
+    const d = override && override.key === k ? override.data : loadDay(k);
+    const filled = hasContent(d);
+    out.push({
+      key: k,
+      label: `${dt.getMonth() + 1}/${dt.getDate()}`,
+      score: filled ? computeScore(d).total : null,
+      mood: d.mood,
+    });
+  }
+  return out;
+}
+
+export interface WeekStats {
+  avg: number | null;
+  best: { key: string; score: number } | null;
+  filledDays: number;
+  tasksDone: number;
+  tasksTotal: number;
+  studyPlan: number;
+  studyActual: number;
+  fitnessDays: number;
+  moodCounts: Record<MoodKey, number>;
+  moduleAvg: { key: ModuleKey; value: number }[];
+  weakest: ModuleKey | null;
+}
+
+function hasModuleData(d: DayData, k: ModuleKey): boolean {
+  switch (k) {
+    case "work":
+      return d.workItems.length > 0 || !!d.workNote.trim();
+    case "study":
+      return d.studyItems.length > 0;
+    case "sleep":
+      return Object.values(d.sleep).some((v) => v.trim());
+    case "mood":
+      return !!d.mood || !!d.moodNote.trim();
+    case "fitness":
+      return Object.values(d.fitness).some((v) => v.trim());
+    case "life":
+      return Object.values(d.life).some((v) => v.trim());
+    case "records":
+      return Object.values(d.records).some(Boolean) || !!d.recordNote.trim();
+    case "activities":
+      return d.activities.length > 0;
+    case "image":
+      return [d.image.skincare, d.image.hair, d.image.outfit].some(
+        (r) => r.learn.trim() || r.actual.trim() || r.next.trim()
+      );
+  }
+}
+
+export function reviewOfDays(keys: string[], days: DayData[]): WeekStats {
+  const moduleSum = {} as Record<ModuleKey, { sum: number; n: number }>;
+  MODULE_KEYS.forEach((k) => (moduleSum[k] = { sum: 0, n: 0 }));
+  const moodCounts: Record<MoodKey, number> = {
+    happy: 0,
+    calm: 0,
+    okay: 0,
+    down: 0,
+    irritable: 0,
+  };
+  let scoreSum = 0;
+  let filled = 0;
+  let best: WeekStats["best"] = null;
+  let tasksDone = 0;
+  let tasksTotal = 0;
+  let studyPlan = 0;
+  let studyActual = 0;
+  let fitnessDays = 0;
+
+  keys.forEach((k, i) => {
+    const d = days[i];
+    if (!hasContent(d)) return;
+    filled++;
+    const sc = computeScore(d);
+    scoreSum += sc.total;
+    if (!best || sc.total > best.score) best = { key: k, score: sc.total };
+    sc.parts.forEach((p) => {
+      if (p.score > 0 || hasModuleData(d, p.key)) {
+        moduleSum[p.key].sum += p.score;
+        moduleSum[p.key].n++;
+      }
+    });
+    tasksTotal += d.workItems.length;
+    tasksDone += d.workItems.filter((w) => w.done).length;
+    d.studyItems.forEach((si) => {
+      studyPlan += si.planMin || 0;
+      studyActual += si.actualMin || 0;
+    });
+    if (d.fitness.actual.trim() || d.fitness.plan.trim()) fitnessDays++;
+    if (d.mood) moodCounts[d.mood]++;
+  });
+
+  const moduleAvg = MODULE_KEYS.map((k) => ({
+    key: k,
+    value: moduleAvgSafe(moduleSum[k]),
+  }));
+  const scored = moduleAvg.filter((x) => x.value >= 0);
+  const weakest = scored.length ? scored.reduce((a, b) => (b.value < a.value ? b : a)).key : null;
+
+  return {
+    avg: filled ? Math.round(scoreSum / filled) : null,
+    best,
+    filledDays: filled,
+    tasksDone,
+    tasksTotal,
+    studyPlan,
+    studyActual,
+    fitnessDays,
+    moodCounts,
+    moduleAvg,
+    weakest,
+  };
+}
+
+function moduleAvgSafe(s: { sum: number; n: number }): number {
+  return s.n ? Math.round(s.sum / s.n) : -1;
+}
+
+/* ---------------- 导出 / 导入 ---------------- */
+
+export function toMarkdown(d: DayData, date: Date): string {
+  const sc = computeScore(d);
+  const m = moodOf(d.mood);
+  const w = WEATHERS.find((x) => x.key === d.weather);
+  const part = (k: ModuleKey) => sc.parts.find((p) => p.key === k)?.score ?? 0;
+  const L: string[] = [];
+  L.push(`# ${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 · 一日手账`);
+  L.push("");
+  L.push(`> 状态评分：**${sc.total} / 100** · ${encouragement(sc.total)}`);
+  const meta: string[] = [];
+  if (w) meta.push(`天气：${w.label}`);
+  if (d.place.trim()) meta.push(`地点：${d.place.trim()}`);
+  if (meta.length) L.push(`> ${meta.join(" · ")}`);
+  L.push("");
+
+  L.push(`## 工作（${part("work")} 分）`);
+  if (d.workItems.length)
+    d.workItems.forEach((i) => L.push(`- [${i.done ? "x" : " "}] ${i.text}`));
+  else L.push("- （未记录）");
+  if (d.workNote.trim()) L.push(`> 复盘：${d.workNote.trim()}`);
+  L.push("");
+
+  L.push(`## 学习（${part("study")} 分）`);
+  if (d.studyItems.length) {
+    L.push("| 科目 | 规划(分) | 实际(分) | 检查 |");
+    L.push("| --- | --- | --- | --- |");
+    d.studyItems.forEach((i) =>
+      L.push(
+        `| ${i.subject || "未命名"} | ${i.planMin || "—"} | ${i.actualMin || "—"} | ${i.checked ? "已检查" : "未检查"} |`
+      )
+    );
+  } else L.push("- （未记录）");
+  if (d.studyNote.trim()) L.push(`> ${d.studyNote.trim()}`);
+  L.push("");
+
+  const s = d.sleep;
+  L.push(`## 睡眠（${part("sleep")} 分）`);
+  L.push(`- 昨晚计划：${s.planBed && s.planWake ? `${s.planBed} – ${s.planWake}` : "未记录"}`);
+  L.push(
+    `- 实际睡眠：${s.actBed && s.actWake ? `${s.actBed} – ${s.actWake}（${fmtDur(sleepSpan(s.actBed, s.actWake))}）` : "未记录"}`
+  );
+  L.push(`- 明日规划：${s.nextBed && s.nextWake ? `${s.nextBed} – ${s.nextWake}` : "未规划"}`);
+  L.push("");
+
+  L.push(`## 健身（${part("fitness")} 分）`);
+  L.push(`- 规划：${d.fitness.plan.trim() || "未记录"}`);
+  L.push(`- 实际：${d.fitness.actual.trim() || "未记录"}`);
+  L.push(`- 下一步：${d.fitness.next.trim() || "未规划"}`);
+  L.push("");
+
+  L.push(`## 生活 · 衣食住行（${part("life")} 分）`);
+  L.push(`- 食：${d.life.food.trim() || "—"}`);
+  L.push(`- 衣：${d.life.clothing.trim() || "—"}`);
+  L.push(`- 住：${d.life.home.trim() || "—"}`);
+  L.push(`- 行：${d.life.transport.trim() || "—"}`);
+  L.push("");
+
+  L.push(`## 活动（${part("activities")} 分）`);
+  if (d.activities.length)
+    d.activities.forEach((a) => L.push(`- ${a.type}${a.note.trim() ? `：${a.note.trim()}` : ""}`));
+  else L.push("- （未记录）");
+  L.push("");
+
+  L.push(`## 生活记录（${part("records")} 分）`);
+  const recs: string[] = [];
+  if (d.records.vlog) recs.push("Vlog");
+  if (d.records.photo) recs.push("拍照");
+  if (d.records.social) recs.push("社交");
+  if (d.records.showcase) recs.push("展示面");
+  L.push(`- 打卡：${recs.length ? recs.join("、") : "无"}`);
+  if (d.recordNote.trim()) L.push(`- 灵感：${d.recordNote.trim()}`);
+  L.push("");
+
+  L.push(`## 个人形象（${part("image")} 分）`);
+  (
+    [
+      ["护肤", d.image.skincare],
+      ["发型", d.image.hair],
+      ["穿搭", d.image.outfit],
+    ] as [string, ImageRow][]
+  ).forEach(([name, r]) => {
+    L.push(`### ${name}`);
+    L.push(`- 学习：${r.learn.trim() || "—"}`);
+    L.push(`- 实际：${r.actual.trim() || "—"}`);
+    L.push(`- 下一步：${r.next.trim() || "—"}`);
+  });
+  L.push("");
+
+  L.push(`## 心情（${part("mood")} 分）`);
+  L.push(`- 心情：${m ? m.label : "未选择"} · 能量 ${d.energy}/10`);
+  if (d.moodNote.trim()) L.push(`> ${d.moodNote.trim()}`);
+  L.push("");
+
+  if (d.selfScore > 0) L.push(`**自评：${d.selfScore} / 10 分**`);
+  return L.join("\n");
+}
+
+export function exportAll(): void {
+  const idx = loadIndex();
+  const days: Record<string, DayData> = {};
+  Object.keys(idx).forEach((k) => {
+    days[k] = loadDay(k);
+  });
+  const payload = {
+    app: "day-ledger",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    days,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `一日手账-备份-${todayKey()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function importAll(json: string): number {
+  const obj = JSON.parse(json) as { days?: Record<string, unknown> };
+  const days = obj?.days;
+  if (!days || typeof days !== "object") throw new Error("invalid backup file");
+  let n = 0;
+  Object.entries(days).forEach(([k, v]) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v && typeof v === "object") {
+      saveDay(k, { ...emptyDay(), ...(v as Partial<DayData>) });
+      n++;
+    }
+  });
+  return n;
 }

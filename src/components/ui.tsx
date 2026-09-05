@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { MoodKey } from "../lib/core";
+import type { MoodKey, WeatherKey } from "../lib/core";
 
 /* ---------------- 滚动显现 ---------------- */
 
@@ -63,7 +63,9 @@ export type IconName =
   | "video"
   | "spark"
   | "home"
-  | "bus";
+  | "bus"
+  | "download"
+  | "upload";
 
 const PATHS: Record<IconName, ReactNode> = {
   briefcase: (
@@ -189,6 +191,8 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="16" cy="19.6" r="1.4" />
     </>
   ),
+  download: <path d="M12 3.5V15M7.5 10.5 12 15l4.5-4.5M4.5 19.5h15" />,
+  upload: <path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M4.5 19.5h15" />,
 };
 
 export function Icon({
@@ -300,6 +304,123 @@ export function MoodFace({
         {mouth}
         {extra}
       </g>
+    </svg>
+  );
+}
+
+/* ---------------- 天气（动态图标） ---------------- */
+
+export function WeatherGlyph({
+  w,
+  size = 22,
+  color = "#e8a33d",
+}: {
+  w: WeatherKey;
+  size?: number;
+  color?: string;
+}) {
+  const s = color;
+  let body: ReactNode;
+  switch (w) {
+    case "sunny":
+      body = (
+        <>
+          <circle cx="12" cy="12" r="4" fill={`${s}33`} stroke={s} strokeWidth="1.6" />
+          <g
+            className="animate-spin-slow"
+            style={{ transformBox: "fill-box", transformOrigin: "center" }}
+            stroke={s}
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          >
+            <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+          </g>
+        </>
+      );
+      break;
+    case "cloudy":
+      body = (
+        <>
+          <circle cx="8.5" cy="9" r="3.2" stroke={s} strokeWidth="1.6" />
+          <path
+            className="animate-float"
+            d="M9 17.5h8.5a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.4 3.4 0 0 0 9 17.5Z"
+            fill="#ffffff"
+            stroke={s}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+        </>
+      );
+      break;
+    case "rain":
+      body = (
+        <>
+          <path
+            d="M8 14.5h9a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.4 3.4 0 0 0 8 14.5Z"
+            fill="#ffffff"
+            stroke={s}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <g stroke={s} strokeWidth="1.6" strokeLinecap="round">
+            <path className="raindrop" d="M9.5 17v1.6" />
+            <path className="raindrop d2" d="M12.5 17.6v1.6" />
+            <path className="raindrop d3" d="M15.5 17v1.6" />
+          </g>
+        </>
+      );
+      break;
+    case "storm":
+      body = (
+        <>
+          <path
+            d="M8 13.5h9a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.4 3.4 0 0 0 8 13.5Z"
+            fill="#ffffff"
+            stroke={s}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <path
+            className="bolt"
+            d="M12.6 13.5 10.5 17h2l-1.2 3.4 3.6-4.4h-2l1.5-2.5Z"
+            fill={s}
+            stroke="none"
+          />
+        </>
+      );
+      break;
+    case "snow":
+      body = (
+        <>
+          <path
+            d="M8 14.5h9a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.4 3.4 0 0 0 8 14.5Z"
+            fill="#ffffff"
+            stroke={s}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <g fill={s}>
+            <circle className="raindrop" cx="9.8" cy="17.6" r="1" />
+            <circle className="raindrop d2" cx="12.8" cy="18.4" r="1" />
+            <circle className="raindrop d3" cx="15.6" cy="17.6" r="1" />
+          </g>
+        </>
+      );
+      break;
+    case "wind":
+      body = (
+        <g stroke={s} strokeWidth="1.6" strokeLinecap="round" fill="none">
+          <path d="M4 9h9.5a2.2 2.2 0 1 0-2.2-2.2" />
+          <path d="M4 13h13.5a2.4 2.4 0 1 1-2.4 2.4" />
+          <path d="M4 17h6" />
+        </g>
+      );
+      break;
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {body}
     </svg>
   );
 }

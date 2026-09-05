@@ -1,12 +1,16 @@
 import type { CSSProperties } from "react";
 import {
   MODULES,
+  SLEEP_PRESETS,
+  STUDY_TEMPLATES,
   buildSummary,
   computeScore,
   encouragement,
   fmtDur,
   type DayData,
   type DayScore,
+  type NightPoint,
+  type SleepStats,
 } from "../lib/core";
 import { Bar, Card, EmptyHint, Icon, Ring } from "./ui";
 import type { Updater } from "./ModulesA";
@@ -61,7 +65,17 @@ function TimeBlock({
   );
 }
 
-export function SleepCard({ d, up }: { d: DayData; up: Updater }) {
+export function SleepCard({
+  d,
+  up,
+  nights,
+  sStats,
+}: {
+  d: DayData;
+  up: Updater;
+  nights: NightPoint[];
+  sStats: SleepStats;
+}) {
   const c = MODULES.sleep;
   const s = d.sleep;
   const plan = spanMin(s.planBed, s.planWake);
@@ -108,6 +122,25 @@ export function SleepCard({ d, up }: { d: DayData; up: Updater }) {
         />
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-bold tracking-wider text-ink2">快速设定计划</span>
+        {SLEEP_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() =>
+              up((dd) => {
+                dd.sleep.planBed = p.bed;
+                dd.sleep.planWake = p.wake;
+              })
+            }
+            className="rounded-full border border-[#d8e0ee] bg-[#f5f8fc] px-2.5 py-1 text-[11px] font-medium text-[#46639e] transition-all hover:-translate-y-0.5 hover:bg-[#eaf0f9] active:translate-y-0"
+          >
+            {p.label} · {p.bed}–{p.wake}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-ink2 shadow-sm ring-1 ring-line">
           计划 <b className="font-num text-ink">{plan !== null ? fmtDur(plan) : "—"}</b>
@@ -135,6 +168,67 @@ export function SleepCard({ d, up }: { d: DayData; up: Updater }) {
       <p className="mt-3 text-[11px] leading-relaxed text-ink2">
         理想的睡眠在 7~9 小时之间；入睡时间和计划偏差越小，作息规律分越高。
       </p>
+
+      {nights.some((x) => x.hours !== null) && (
+        <div className="mt-4 rounded-lg border border-[#dbe2ee] bg-[#f6f8fc] p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold tracking-[0.14em] text-[#46639e]">
+              近 7 晚睡眠
+            </span>
+            <div className="flex items-center gap-1.5">
+              {sStats.avg !== null && (
+                <span className="rounded-full bg-white px-2 py-0.5 font-num text-[10px] font-bold text-[#46639e]">
+                  均 {sStats.avg}h
+                </span>
+              )}
+              {sStats.debt !== null && (
+                <span
+                  className={`rounded-full px-2 py-0.5 font-num text-[10px] font-bold text-white ${sStats.debt > 0 ? "bg-seal" : "bg-pine"}`}
+                >
+                  {sStats.debt > 0 ? `负债 ${sStats.debt}h` : `盈余 ${Math.abs(sStats.debt)}h`}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="relative h-16">
+            <div
+              className="absolute inset-x-0 z-10 border-t border-dashed border-[#46639e]/45"
+              style={{ bottom: "80%" }}
+            >
+              <span className="absolute -top-2.5 right-0 font-num text-[9px] font-medium text-[#46639e]/75">
+                8h
+              </span>
+            </div>
+            <div className="absolute inset-0 flex items-end gap-1.5">
+              {nights.map((ng) => (
+                <div
+                  key={ng.key}
+                  className="flex-1 rounded-t-sm transition-all duration-500"
+                  title={ng.hours !== null ? `${ng.hours} 小时` : "未记录"}
+                  style={{
+                    height: ng.hours !== null ? `${Math.min(100, ng.hours * 10)}%` : "4px",
+                    background:
+                      ng.hours === null
+                        ? "#dde2ec"
+                        : ng.hours >= 7.5
+                          ? "#3e9c6e"
+                          : ng.hours >= 6
+                            ? "#e8a33d"
+                            : "#d9482b",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="mt-1 flex gap-1.5">
+            {nights.map((ng) => (
+              <span key={ng.key} className="flex-1 text-center text-[9px] text-ink2">
+                {ng.weekday}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -231,6 +325,24 @@ export function StudyCard({ d, up }: { d: DayData; up: Updater }) {
                 />
                 分钟
               </label>
+              <span className="flex flex-col gap-0.5">
+                {[25, 45].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    title={`实际时长 +${m} 分钟`}
+                    onClick={() =>
+                      up((dd) => {
+                        const t = dd.studyItems.find((x) => x.id === it.id);
+                        if (t) t.actualMin = Math.min(720, (t.actualMin || 0) + m);
+                      })
+                    }
+                    className="rounded border border-[#cfe8ec] bg-white px-1 font-num text-[9px] font-bold leading-tight text-[#2c8c99] transition-all hover:bg-[#e4f5f7] active:scale-90"
+                  >
+                    +{m}
+                  </button>
+                ))}
+              </span>
               <button
                 type="button"
                 aria-pressed={it.checked}
@@ -254,6 +366,32 @@ export function StudyCard({ d, up }: { d: DayData; up: Updater }) {
           </div>
         ))}
       </div>
+
+      {STUDY_TEMPLATES.some((t) => !d.studyItems.some((i) => i.subject === t)) && (
+        <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-bold tracking-wider text-ink2">快速添加</span>
+          {STUDY_TEMPLATES.filter((t) => !d.studyItems.some((i) => i.subject === t)).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() =>
+                up((dd) =>
+                  void dd.studyItems.push({
+                    id: uidLocal(),
+                    subject: t,
+                    planMin: 30,
+                    actualMin: 0,
+                    checked: false,
+                  })
+                )
+              }
+              className="rounded-md border border-dashed border-[#a9d3d9] bg-[#f1fafb] px-2 py-1 text-[11px] font-medium text-[#2c8c99] transition-all hover:-translate-y-0.5 hover:border-solid hover:bg-[#e4f5f7] active:translate-y-0"
+            >
+              + {t}
+            </button>
+          ))}
+        </div>
+      )}
 
       <button
         type="button"

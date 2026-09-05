@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   MODULES,
+  WORK_TEMPLATES,
   moodOf,
   uid,
   type DayData,
@@ -10,9 +11,11 @@ import { Bar, Card, Chip, DotCheck, EmptyHint, Icon, MoodFace, type IconName } f
 
 export type Updater = (mut: (d: DayData) => void) => void;
 
+export type Notify = (msg: string, action?: { label: string; fn: () => void }) => void;
+
 /* ================= 工作 ================= */
 
-export function WorkCard({ d, up }: { d: DayData; up: Updater }) {
+export function WorkCard({ d, up, notify }: { d: DayData; up: Updater; notify: Notify }) {
   const [text, setText] = useState("");
   const c = MODULES.work;
   const done = d.workItems.filter((i) => i.done).length;
@@ -31,6 +34,20 @@ export function WorkCard({ d, up }: { d: DayData; up: Updater }) {
     <Card title="工作" en={c.en} color={c.color} icon="briefcase" hint={c.hint} progress={pct}>
       {d.workItems.length === 0 && (
         <EmptyHint text="还没有任务。写下今天要做的第一件事，哪怕很小。" />
+      )}
+      {WORK_TEMPLATES.some((t) => !d.workItems.some((i) => i.text === t)) && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {WORK_TEMPLATES.filter((t) => !d.workItems.some((i) => i.text === t)).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => up((dd) => void dd.workItems.push({ id: uid(), text: t, done: false }))}
+              className="rounded-md border border-dashed border-[#b9c8de] bg-[#f4f8fd] px-2 py-1 text-[11px] font-medium text-[#3d74c0] transition-all hover:-translate-y-0.5 hover:border-solid hover:bg-[#e9f1fb] active:translate-y-0"
+            >
+              + {t}
+            </button>
+          ))}
+        </div>
       )}
       <ul className="space-y-2">
         {d.workItems.map((it) => (
@@ -68,11 +85,21 @@ export function WorkCard({ d, up }: { d: DayData; up: Updater }) {
             <button
               type="button"
               aria-label="删除任务"
-              onClick={() =>
+              onClick={() => {
+                const idx = d.workItems.findIndex((x) => x.id === it.id);
+                const item = { ...it };
                 up((dd) => {
                   dd.workItems = dd.workItems.filter((x) => x.id !== it.id);
-                })
-              }
+                });
+                notify("已删除任务", {
+                  label: "撤销",
+                  fn: () =>
+                    up((dd) => {
+                      if (dd.workItems.some((x) => x.id === item.id)) return;
+                      dd.workItems.splice(Math.min(idx, dd.workItems.length), 0, item);
+                    }),
+                });
+              }}
               className="text-ink2/50 opacity-0 transition-all hover:scale-110 hover:text-seal group-hover:opacity-100"
             >
               <Icon name="trash" size={16} />
@@ -184,7 +211,7 @@ export function LifeCard({ d, up }: { d: DayData; up: Updater }) {
 
 const ACT_TYPES = ["聚餐", "电影", "逛街", "演出", "看展", "运动", "散步", "其他"];
 
-export function ActivitiesCard({ d, up }: { d: DayData; up: Updater }) {
+export function ActivitiesCard({ d, up, notify }: { d: DayData; up: Updater; notify: Notify }) {
   const c = MODULES.activities;
   const [type, setType] = useState("聚餐");
   const [note, setNote] = useState("");
@@ -264,11 +291,21 @@ export function ActivitiesCard({ d, up }: { d: DayData; up: Updater }) {
             <button
               type="button"
               aria-label="删除活动"
-              onClick={() =>
+              onClick={() => {
+                const idx = d.activities.findIndex((x) => x.id === a.id);
+                const item = { ...a };
                 up((dd) => {
                   dd.activities = dd.activities.filter((x) => x.id !== a.id);
-                })
-              }
+                });
+                notify("已删除活动", {
+                  label: "撤销",
+                  fn: () =>
+                    up((dd) => {
+                      if (dd.activities.some((x) => x.id === item.id)) return;
+                      dd.activities.splice(Math.min(idx, dd.activities.length), 0, item);
+                    }),
+                });
+              }}
               className="text-ink2/50 opacity-0 transition-all hover:scale-110 hover:text-seal group-hover:opacity-100"
             >
               <Icon name="trash" size={16} />

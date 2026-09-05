@@ -1,5 +1,6 @@
 import {
   MOODS,
+  WEATHERS,
   WEEKDAYS,
   dayOfYear,
   fmtCN,
@@ -8,8 +9,18 @@ import {
   moodOf,
   type DayScore,
   type MoodKey,
+  type WeatherKey,
 } from "../lib/core";
-import { Bar, Icon, MoodFace, Ring, useReveal } from "./ui";
+import { Bar, Icon, MoodFace, Ring, WeatherGlyph, useReveal } from "./ui";
+
+const WEATHER_COLORS: Record<WeatherKey, string> = {
+  sunny: "#e8a33d",
+  cloudy: "#8a94a0",
+  rain: "#46639e",
+  storm: "#b3542e",
+  snow: "#6e8ca0",
+  wind: "#3e9c6e",
+};
 
 export interface WeekCell {
   key: string;
@@ -120,12 +131,20 @@ export function Banner({
   mood,
   onMood,
   stats,
+  weather,
+  place,
+  onWeather,
+  onPlace,
 }: {
   date: Date;
   score: DayScore;
   mood: MoodKey | null;
   onMood: (m: MoodKey) => void;
   stats: { streak: number; weekAvg: number | null; count: number };
+  weather: WeatherKey | null;
+  place: string;
+  onWeather: (w: WeatherKey | null) => void;
+  onPlace: (s: string) => void;
 }) {
   const [ref, inView] = useReveal<HTMLDivElement>();
   const moodDef = moodOf(mood);
@@ -182,6 +201,44 @@ export function Banner({
             <Icon name="pen" size={15} className="text-gold" strokeWidth={2.2} />
             {greeting(hour)}
           </p>
+
+          {/* 天气 · 地点 */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-0.5 rounded-full border border-line bg-white/70 p-1 shadow-sm">
+              {WEATHERS.map((wd) => {
+                const on = weather === wd.key;
+                return (
+                  <button
+                    key={wd.key}
+                    type="button"
+                    title={wd.label}
+                    aria-label={wd.label}
+                    onClick={() => onWeather(on ? null : wd.key)}
+                    className="rounded-full p-1.5 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white active:translate-y-0"
+                    style={
+                      on
+                        ? {
+                            background: "#ffffff",
+                            boxShadow: `0 0 0 2px ${WEATHER_COLORS[wd.key]}, 0 3px 8px -2px rgba(36,48,41,.3)`,
+                          }
+                        : { opacity: weather ? 0.4 : 0.85 }
+                    }
+                  >
+                    <WeatherGlyph w={wd.key} size={19} color={WEATHER_COLORS[wd.key]} />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-1.5 rounded-full border border-dashed border-line bg-white/50 py-1.5 pl-3 pr-2 transition-colors focus-within:border-solid focus-within:border-pine">
+              <Icon name="home" size={13} className="text-ink2" />
+              <input
+                value={place}
+                onChange={(e) => onPlace(e.target.value)}
+                placeholder="今天在哪儿？"
+                className="w-24 bg-transparent text-xs text-ink outline-none placeholder:text-ink2/50 sm:w-32"
+              />
+            </div>
+          </div>
 
           {/* 统计胶囊 */}
           <div className="mt-5 flex flex-wrap gap-2">
