@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import confetti from "canvas-confetti";
 import {
   MODULE_KEYS,
   WEEKDAYS,
@@ -136,6 +137,27 @@ export default function App() {
     const t = setTimeout(() => setToast(null), toast.action ? 5000 : 2400);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /* ---------- 85+ 撒花庆祝（每日一次） ---------- */
+  const scoreTrack = useRef<{ k: string; s: number } | null>(null);
+  const celebrated = useRef<string>("");
+  useEffect(() => {
+    const prev = scoreTrack.current;
+    scoreTrack.current = { k: editKey, s: score.total };
+    if (!prev || prev.k !== editKey) return;
+    if (score.total >= 85 && prev.s < 85 && celebrated.current !== editKey) {
+      celebrated.current = editKey;
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        confetti({
+          particleCount: 130,
+          spread: 78,
+          origin: { y: 0.55 },
+          colors: ["#d9482b", "#e8a33d", "#2e6b54", "#fffdf7", "#46639e"],
+        });
+      }
+      setToast({ id: Date.now(), msg: "状态分冲上 85+，闪闪发光的一天！" });
+    }
+  }, [score.total, editKey]);
 
   /* ---------- 提醒 ---------- */
   const notifiedRef = useRef<{ m: string; e: string }>({ m: "", e: "" });
