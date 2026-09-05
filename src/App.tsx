@@ -1,104 +1,124 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  MODULE_KEYS,
   WEEKDAYS,
   addDays,
   computeScore,
-  exportAll,
   fmtCN,
   hasContent,
-  importAll,
   isTodayKey,
   keyOf,
-  lastNights,
   loadDay,
   loadIndex,
+  loadSettings,
   parseKey,
   saveDay,
-  sleepStats,
-  toMarkdown,
+  saveSettings,
+  sleepSeries,
   todayKey,
-  trendOf,
   weekOf,
   type DayData,
   type LedgerIndex,
+  type ModuleKey,
+  type Settings,
 } from "./lib/core";
-import { Icon, type IconName } from "./components/ui";
-import { Banner, TopBar, WeekStrip, type WeekCell } from "./components/Header";
-import { ActivitiesCard, LifeCard, MoodCard, RecordsCard, WorkCard } from "./components/ModulesA";
-import { FitnessCard, ImageCard, ScoreCard, SleepCard, StudyCard } from "./components/ModulesB";
-import { MonthHeat, TrendChart, WeekReview } from "./components/Insights";
+import { Icon, useReveal, type IconName } from "./components/ui";
+import { TopBar, TodayHero, type Phase } from "./components/Header";
+import {
+  FitnessCard,
+  MoodCard,
+  SleepCard,
+  StudyCard,
+  WorkCard,
+  type Notify,
+} from "./components/ModulesA";
+import { ActivitiesCard, ImageCard, LifeCard, RecordsCard, ScoreCard } from "./components/ModulesB";
+import { CalendarPage, DayHeader } from "./components/CalendarPage";
+import { StatsPage } from "./components/StatsPage";
+import { SettingsPage } from "./components/SettingsPage";
 
-interface Toast {
+type Tab = "home" | "calendar" | "stats" | "settings";
+
+interface ToastState {
   id: number;
   msg: string;
   action?: { label: string; fn: () => void };
 }
 
-function ToolBtn({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1.5 rounded-full border border-line bg-white/80 px-3 py-1.5 text-xs font-medium text-ink2 transition-all hover:-translate-y-0.5 hover:border-ink/30 hover:text-ink hover:shadow-sm active:translate-y-0"
-    >
-      <Icon name={icon} size={13} strokeWidth={2.2} />
-      {label}
-    </button>
-  );
-}
+const TABS: { key: Tab; label: string; icon: IconName }[] = [
+  { key: "home", label: "首页", icon: "home" },
+  { key: "calendar", label: "日历", icon: "calendar" },
+  { key: "stats", label: "统计", icon: "chart" },
+  { key: "settings", label: "设置", icon: "gear" },
+];
 
 export default function App() {
-  const [dateKey, setDateKey] = useState<string>(todayKey());
+  const [tab, setTab] = useState<Tab>("home");
+  const [viewDay, setViewDay] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>(() => (new Date().getHours() < 18 ? "plan" : "review"));
+
+  const [editKey, setEditKey] = useState<string>(todayKey());
   const [data, setData] = useState<DayData>(() => loadDay(todayKey()));
   const [index, setIndex] = useState<LedgerIndex>(() => loadIndex());
+  const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [saving, setSaving] = useState(false);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
+  const [quickText, setQuickText] = useState("");
 
-  const date = useMemo(() => parseKey(dateKey), [dateKey]);
-  const score = useMemo(() => computeScore(data), [data]);
-
-  /* ---------- 日期切换 ---------- */
-  const switchDate = useCallback(
-    (k: string) => {
-      if (k === dateKey) return;
-      setDateKey(k);
-      setData(loadDay(k));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    [dateKey]
+  const date = useMemo(() => parseKey(editKey), [editKey]);
+  const enabled = useMemo(
+    () => MODULE_KEYS.filter((k) => settings.modules[k]),
+    [settings]
   );
+  const score = useMemo(
+    () => computeScore(data, settings.weights, enabled),
+    [data, settings.weights, enabled]
+  );
+  const nights = useMemo(() => sleepSeries(index, editKey, 7), [index, editKey]);
 
-  const shift = useCallback((n: number) => switchDate(keyOf(addDays(date, n))), [date, switchDate]);
+  /* ---------- 切换编辑日期 ---------- */
+  const openDay = useCallback((k: string) => {
+    setEditKey(k);
+    setData(loadDay(k));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
-  /* 键盘 ← / → 切换日期 */
+  /* 首页固定编辑今天；跨零点自动切换 */
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!viewDay && editKey !== todayKey()) openDay(todayKey());
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [viewDay, editKey, openDay]);
+
+  /* 键盘 ← / → 在日详情翻页 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!viewDay) return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
-      shift(e.key === "ArrowLeft" ? -1 : 1);
+      openDay(keyOf(addDays(date, e.key === "ArrowLeft" ? -1 : 1)));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shift]);
+  }, [viewDay, date, openDay]);
 
-  /* ---------- 自动保存（防抖） ---------- */
+  /* ---------- 自动保存 ---------- */
   useEffect(() => {
     setSaving(true);
     const t = setTimeout(() => {
-      saveDay(dateKey, data);
+      saveDay(editKey, data);
       setIndex(loadIndex());
       setSaving(false);
-      setSavedLabel(
-        new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-      );
+      setSavedLabel(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
     }, 500);
     return () => clearTimeout(t);
-  }, [data, dateKey]);
+  }, [data, editKey]);
 
-  /* ---------- 数据更新器 ---------- */
+  /* ---------- 更新器 / toast ---------- */
   const up = useCallback((mut: (d: DayData) => void) => {
     setData((prev) => {
       const draft: DayData = structuredClone(prev);
@@ -107,40 +127,42 @@ export default function App() {
     });
   }, []);
 
-  /* ---------- toast（支持撤销动作） ---------- */
-  const onToast = useCallback((msg: string, action?: Toast["action"]) => {
-    setToast({ id: Date.now() + Math.random(), msg, action });
+  const notify: Notify = useCallback((msg, action) => {
+    setToast({ id: Date.now(), msg, action });
   }, []);
+
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), toast.action ? 5200 : 2400);
+    const t = setTimeout(() => setToast(null), toast.action ? 5000 : 2400);
     return () => clearTimeout(t);
   }, [toast]);
 
-  /* ---------- 周视图数据 ---------- */
-  const week: WeekCell[] = useMemo(() => {
-    const liveFilled = hasContent(data);
-    return weekOf(date).map((d) => {
-      const k = keyOf(d);
-      const meta = index[k];
-      const isSel = k === dateKey;
-      return {
-        key: k,
-        label: `周${WEEKDAYS[d.getDay()]}`,
-        num: d.getDate(),
-        score: isSel ? score.total : meta?.score ?? 0,
-        filled: isSel ? liveFilled : meta?.filled ?? false,
-        isToday: isTodayKey(k),
-        active: isSel,
-      };
-    });
-  }, [date, dateKey, index, score, data]);
+  /* ---------- 提醒 ---------- */
+  const notifiedRef = useRef<{ m: string; e: string }>({ m: "", e: "" });
+  useEffect(() => {
+    if (!settings.reminders.morning && !settings.reminders.evening) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const t = setInterval(() => {
+      const now = new Date();
+      const day = todayKey();
+      const hm = now.getHours() * 60 + now.getMinutes();
+      const idx = loadIndex();
+      const filledToday = !!idx[day]?.filled;
+      if (settings.reminders.morning && hm >= 8 * 60 && hm < 8 * 60 + 30 && notifiedRef.current.m !== day) {
+        notifiedRef.current.m = day;
+        new Notification("一日手账 · 晨间规划", { body: "花 3 分钟把今天安排明白：目标、待办、学习计划。" });
+      }
+      if (settings.reminders.evening && hm >= 21 * 60 + 30 && hm < 22 * 60 && notifiedRef.current.e !== day && !filledToday) {
+        notifiedRef.current.e = day;
+        new Notification("一日手账 · 晚间复盘", { body: "今天过得怎么样？记录一下，给今天打个分。" });
+      }
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [settings.reminders]);
 
   /* ---------- 统计 ---------- */
   const stats = useMemo(() => {
-    const liveFilled = hasContent(data);
-    const filled = (k: string) => (k === dateKey ? liveFilled || !!index[k]?.filled : !!index[k]?.filled);
-
+    const filled = (k: string) => !!index[k]?.filled;
     let streak = 0;
     let cur = new Date();
     if (!filled(keyOf(cur))) cur = addDays(cur, -1);
@@ -148,207 +170,252 @@ export default function App() {
       streak++;
       cur = addDays(cur, -1);
     }
-
     const scores = weekOf(date)
-      .map((d) => {
-        const k = keyOf(d);
-        if (k === dateKey) return liveFilled ? score.total : null;
-        const m = index[k];
+      .map((d2) => {
+        const m = index[keyOf(d2)];
         return m?.filled ? m.score : null;
       })
       .filter((v): v is number => v !== null);
-    const weekAvg = scores.length
-      ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length)
-      : null;
+    const weekAvg = scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null;
+    const count = Object.values(index).filter((m) => m?.filled).length;
+    return { streak, weekAvg, count };
+  }, [index, date]);
 
-    const countSet = new Set(Object.keys(index).filter((k) => index[k]?.filled));
-    if (liveFilled) countSet.add(dateKey);
+  const sleepLine = useMemo(() => {
+    if (data.sleep.actBed && data.sleep.actWake) {
+      const last = nights[nights.length - 1];
+      return last?.hours ? `昨晚睡了 ${last.hours}h` : "已记录实际睡眠";
+    }
+    if (data.sleep.planBed && data.sleep.planWake) return "已规划今晚睡眠";
+    return "睡眠待记录";
+  }, [data.sleep, nights]);
 
-    return { streak, weekAvg, count: countSet.size };
-  }, [date, dateKey, index, data, score]);
-
-  /* ---------- 洞察数据 ---------- */
-  const override = useMemo(() => ({ key: dateKey, data }), [dateKey, data]);
-  const trend = useMemo(() => trendOf(dateKey, 14, override), [dateKey, override]);
-  const nights = useMemo(() => lastNights(dateKey, 7, override), [dateKey, override]);
-  const sStats = useMemo(() => sleepStats(nights), [nights]);
-  const weekDates = useMemo(() => weekOf(date), [date]);
-  const weekDays = useMemo(
-    () => weekDates.map((dd) => (keyOf(dd) === dateKey ? data : loadDay(keyOf(dd)))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [weekDates, dateKey, data, index]
+  const onViewDay = useCallback(
+    (k: string) => {
+      setViewDay(k);
+      openDay(k);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [openDay]
   );
 
-  /* ---------- 数据管理 ---------- */
-  const copyMarkdown = () => {
-    const md = toMarkdown(data, date);
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(md)
-        .then(() => onToast("Markdown 日记已复制到剪贴板"))
-        .catch(() => onToast("复制失败，请重试"));
-    } else {
-      onToast("当前环境不支持复制");
+  /* ---------- 快速随笔 ---------- */
+  const saveQuick = () => {
+    const t = quickText.trim();
+    if (!t) return;
+    up((dd) => {
+      dd.recordNote = dd.recordNote ? `${dd.recordNote}\n${t}` : t;
+    });
+    setQuickText("");
+    setFabOpen(false);
+    notify("随笔已记入今日「生活记录」");
+  };
+
+  const showHome = tab === "home" && !viewDay;
+
+  /* 模块卡片渲染（首页按时段 / 日详情全量） */
+  const renderModules = (mode: Phase | "all") => {
+    const has = (k: ModuleKey) => enabled.includes(k);
+    const grid = "mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3";
+    const cards: ReactNode[] = [];
+    if (has("work")) cards.push(<WorkCard key="work" d={data} date={date} up={up} notify={notify} phase={mode} />);
+    if (has("study")) cards.push(<StudyCard key="study" d={data} date={date} up={up} phase={mode} />);
+    if (has("sleep")) cards.push(<SleepCard key="sleep" d={data} up={up} phase={mode} nights={nights} />);
+    if (mode === "review" || mode === "all") {
+      if (has("life")) cards.push(<LifeCard key="life" d={data} up={up} phase={mode} spendingOn={settings.spending} notify={notify} />);
+      if (has("activities")) cards.push(<ActivitiesCard key="act" d={data} up={up} notify={notify} phase={mode} />);
     }
-  };
-
-  const onExport = () => {
-    try {
-      saveDay(dateKey, data);
-      exportAll();
-      onToast("已导出全部数据（JSON 备份）");
-    } catch {
-      onToast("导出失败，请重试");
+    if (has("fitness")) cards.push(<FitnessCard key="fit" d={data} up={up} phase={mode} />);
+    if (has("image")) cards.push(<ImageCard key="img" d={data} up={up} notify={notify} phase={mode} />);
+    if (mode === "plan" && (has("life") || has("activities"))) {
+      if (has("activities")) cards.push(<ActivitiesCard key="act-plan" d={data} up={up} notify={notify} phase="plan" />);
+      if (has("life")) cards.push(<LifeCard key="life-plan" d={data} up={up} phase="plan" spendingOn={settings.spending} notify={notify} />);
     }
+    if (mode === "review" || mode === "all") {
+      if (has("records")) cards.push(<RecordsCard key="rec" d={data} up={up} notify={notify} />);
+      if (has("mood")) cards.push(<MoodCard key="mood" d={data} up={up} phase={mode} index={index} />);
+    }
+    if (mode === "plan" && cards.length === 0) {
+      return (
+        <div className="mt-8 rounded-xl border border-dashed border-line bg-sheet/60 px-6 py-10 text-center">
+          <p className="font-display text-lg font-bold text-ink2">所有模块都被关闭了</p>
+          <p className="mt-1 text-xs text-ink2">去「设置」里打开至少一个模块，这一页才会热闹起来。</p>
+        </div>
+      );
+    }
+    const withScore =
+      mode === "plan" ? (
+        cards
+      ) : (
+        <>
+          {cards}
+          <ScoreCard d={data} up={up} date={date} score={score} settings={settings} onToast={notify} />
+        </>
+      );
+    return <div className={grid}>{withScore}</div>;
   };
-
-  const onImportFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const n = importAll(String(r.result));
-        setIndex(loadIndex());
-        setData(loadDay(dateKey));
-        onToast(n ? `已导入 ${n} 天的记录` : "文件里没有可导入的数据");
-      } catch {
-        onToast("导入失败：文件格式不正确");
-      }
-    };
-    r.readAsText(f);
-    e.target.value = "";
-  };
-
-  const today = isTodayKey(dateKey);
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen pb-24">
       {/* 环境漂浮层 */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-        <div
-          className="animate-float absolute -left-24 top-1/3 h-96 w-96 rounded-full opacity-60 blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(232,163,61,0.16), transparent 65%)" }}
-        />
-        <div
-          className="animate-float2 absolute -right-28 top-2/3 h-[28rem] w-[28rem] rounded-full opacity-60 blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(46,107,84,0.14), transparent 65%)" }}
-        />
+        <div className="animate-float absolute -left-24 top-1/3 h-96 w-96 rounded-full opacity-60 blur-3xl" style={{ background: "radial-gradient(circle, rgba(232,163,61,0.16), transparent 65%)" }} />
+        <div className="animate-float2 absolute -right-28 top-2/3 h-[28rem] w-[28rem] rounded-full opacity-60 blur-3xl" style={{ background: "radial-gradient(circle, rgba(46,107,84,0.14), transparent 65%)" }} />
       </div>
 
       <TopBar
         date={date}
-        dateKey={dateKey}
-        onShift={shift}
-        onToday={() => switchDate(todayKey())}
         saving={saving}
         savedLabel={savedLabel}
+        dayView={!!viewDay}
+        onShift={viewDay ? (n) => openDay(keyOf(addDays(date, n))) : undefined}
+        onBack={viewDay ? () => setViewDay(null) : undefined}
       />
 
-      <main className="mx-auto max-w-6xl px-4 pb-16 lg:px-6">
-        <Banner
-          date={date}
-          score={score}
-          mood={data.mood}
-          onMood={(m) => up((dd) => void (dd.mood = m))}
-          stats={stats}
-          weather={data.weather}
-          place={data.place}
-          onWeather={(w) => up((dd) => void (dd.weather = w))}
-          onPlace={(s) => up((dd) => void (dd.place = s))}
-        />
+      <main className="mx-auto max-w-6xl px-4 pb-10 lg:px-6">
+        {/* ---------- 首页 ---------- */}
+        {showHome && (
+          <>
+            <TodayHero
+              date={date}
+              phase={phase}
+              onPhase={setPhase}
+              score={score}
+              mood={data.mood}
+              onMood={(m) => up((dd) => void (dd.mood = m))}
+              weather={data.weather}
+              onWeather={(w) => up((dd) => void (dd.weather = w))}
+              place={data.place}
+              onPlace={(s) => up((dd) => void (dd.place = s))}
+              stats={stats}
+              sleepLine={sleepLine}
+            />
+            {renderModules(phase)}
+          </>
+        )}
 
-        <WeekStrip week={week} onPick={switchDate} />
+        {/* ---------- 日详情 ---------- */}
+        {viewDay && (
+          <>
+            <DayHeader date={date} isToday={isTodayKey(editKey)} />
+            {renderModules("all")}
+          </>
+        )}
 
-        {/* 九大模块 */}
-        <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          <WorkCard d={data} up={up} notify={onToast} />
-          <StudyCard d={data} up={up} />
-          <SleepCard d={data} up={up} nights={nights} sStats={sStats} />
-          <LifeCard d={data} up={up} />
-          <FitnessCard d={data} up={up} />
-          <ImageCard d={data} up={up} />
-          <ActivitiesCard d={data} up={up} notify={onToast} />
-          <RecordsCard d={data} up={up} />
-          <MoodCard d={data} up={up} />
-          <ScoreCard d={data} up={up} date={date} onToast={onToast} />
-        </div>
+        {/* ---------- 日历 ---------- */}
+        {tab === "calendar" && !viewDay && <CalendarPage index={index} onViewDay={onViewDay} />}
 
-        {/* 数据洞察 */}
-        <section className="mt-10">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="font-display text-2xl font-black tracking-tight text-ink">
-                数据洞察
-                <span className="font-num ml-2 text-[11px] font-medium tracking-[0.26em] text-ink2/70">
-                  INSIGHTS
-                </span>
-              </h2>
-              <p className="mt-1 text-xs text-ink2">趋势 · 热力 · 复盘，看见自己的节奏</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <ToolBtn icon="pen" label="复制 Markdown" onClick={copyMarkdown} />
-              <ToolBtn icon="download" label="导出备份" onClick={onExport} />
-              <ToolBtn icon="upload" label="导入备份" onClick={() => fileRef.current?.click()} />
-            </div>
-          </div>
+        {/* ---------- 统计 ---------- */}
+        {tab === "stats" && !viewDay && <StatsPage index={index} enabled={enabled} onViewDay={onViewDay} />}
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <div className="lg:col-span-7">
-              <TrendChart points={trend} />
-            </div>
-            <div className="lg:col-span-5">
-              <MonthHeat base={date} index={index} selectedKey={dateKey} onSelect={switchDate} />
-            </div>
-            <div className="lg:col-span-12">
-              <WeekReview week={weekDates} days={weekDays} />
-            </div>
-          </div>
-        </section>
-
-        {!today && (
-          <div className="mt-8 flex justify-center">
-            <button
-              type="button"
-              onClick={() => switchDate(todayKey())}
-              className="group flex items-center gap-2 rounded-full border border-line bg-sheet px-5 py-2.5 text-sm font-bold text-ink2 transition-all hover:-translate-y-0.5 hover:border-seal hover:text-seal hover:shadow-md"
-            >
-              <Icon name="calendar" size={16} />
-              你正在回看 {fmtCN(date)} · 点击回到今天
-            </button>
-          </div>
+        {/* ---------- 设置 ---------- */}
+        {tab === "settings" && !viewDay && (
+          <SettingsPage
+            settings={settings}
+            onSettings={(s) => {
+              setSettings(s);
+              saveSettings(s);
+            }}
+            notify={notify}
+            onDataChanged={() => {
+              setIndex(loadIndex());
+              setData(loadDay(editKey));
+              setSettings(loadSettings());
+            }}
+          />
         )}
 
         <footer className="mt-14 flex flex-col items-center gap-2 border-t border-dashed border-line pt-8 text-center">
-          <span className="font-display grid h-9 w-9 -rotate-3 place-items-center rounded-md bg-seal text-lg font-black text-[#fff7ee] shadow-md ring-2 ring-[#fff7ee]">
-            记
-          </span>
+          <span className="font-display grid h-9 w-9 -rotate-3 place-items-center rounded-md bg-seal text-lg font-black text-[#fff7ee] shadow-md ring-2 ring-[#fff7ee]">记</span>
           <p className="font-display text-sm font-bold text-ink">一日手账 · DAY LEDGER</p>
           <p className="max-w-md text-xs leading-relaxed text-ink2">
-            数据保存在本地浏览器，隐私只属于你；建议定期「导出备份」，换设备时「导入备份」即可恢复。
+            早上规划，晚上复盘；数据保存在本地浏览器，隐私只属于你。
             <br />
             认真过好的每一天，都值得被打分。
-          </p>
-          <p className="font-num text-[10px] tracking-[0.3em] text-ink2/60">
-            PLAN · LIVE · RECORD · SLEEP · STUDY · TRAIN · GLOW
           </p>
         </footer>
       </main>
 
-      {/* 隐藏的文件输入（导入备份） */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="application/json,.json"
-        className="hidden"
-        onChange={onImportFile}
-      />
+      {/* ---------- 悬浮速记 ---------- */}
+      {!viewDay && tab === "home" && (
+        <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-3 sm:right-6">
+          {fabOpen && (
+            <div className="toast-in w-72 rounded-xl border border-line bg-sheet p-3.5 shadow-[0_20px_50px_-20px_rgba(36,48,41,0.5)]">
+              <p className="lbl !mb-1.5">
+                <Icon name="pen" size={12} strokeWidth={2.4} className="text-gold" />
+                快速随笔 · {fmtCN(date)}
+              </p>
+              <textarea
+                autoFocus
+                className="inp resize-none"
+                rows={3}
+                placeholder="灵感、碎碎念、值得记一笔的瞬间…"
+                value={quickText}
+                onChange={(e) => setQuickText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveQuick();
+                }}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <button type="button" onClick={() => setFabOpen(false)} className="rounded-lg px-3 py-1.5 text-xs font-bold text-ink2 transition-colors hover:bg-white">
+                  取消
+                </button>
+                <button type="button" onClick={saveQuick} disabled={!quickText.trim()} className="rounded-lg bg-seal px-4 py-1.5 text-xs font-bold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:hover:translate-y-0">
+                  记一笔
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label="快速随笔"
+            onClick={() => setFabOpen((v) => !v)}
+            className="relative grid h-14 w-14 place-items-center rounded-full bg-seal text-white shadow-[0_14px_30px_-10px_rgba(217,72,43,0.8)] transition-all duration-300 hover:scale-110 hover:rotate-90 active:scale-95"
+          >
+            <span className="absolute inset-0 -z-10 rounded-full bg-seal/40 fab-ping" />
+            <Icon name={fabOpen ? "x" : "pen"} size={22} strokeWidth={2.2} />
+          </button>
+        </div>
+      )}
 
-      {/* Toast */}
+      {/* ---------- 底部页签栏 ---------- */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line/80 bg-sheet/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          {TABS.map((t) => {
+            const active = tab === t.key && !viewDay;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => {
+                  setTab(t.key);
+                  setViewDay(null);
+                  if (t.key === "home") openDay(todayKey());
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="group relative flex flex-col items-center gap-0.5 py-2.5 transition-colors"
+              >
+                <span
+                  className={`absolute top-0 h-0.5 w-8 rounded-full transition-all duration-300 ${active ? "bg-seal" : "bg-transparent"}`}
+                />
+                <span
+                  className={`grid h-8 w-12 place-items-center rounded-full transition-all duration-300 ${active ? "bg-seal/15 text-seal" : "text-ink2 group-hover:text-ink"}`}
+                  style={active ? { transform: "translateY(-2px)" } : undefined}
+                >
+                  <Icon name={t.icon} size={19} strokeWidth={active ? 2.2 : 1.8} />
+                </span>
+                <span className={`text-[10px] font-bold transition-colors ${active ? "text-seal" : "text-ink2"}`}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* ---------- Toast ---------- */}
       {toast && (
-        <div key={toast.id} className="pointer-events-none fixed inset-x-0 bottom-8 z-50 flex justify-center px-4">
-          <div className="toast-in pointer-events-auto flex items-center gap-2.5 rounded-full bg-ink py-3 pl-5 pr-3 text-sm font-bold text-paper shadow-[0_16px_40px_-12px_rgba(36,48,41,0.6)]">
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-pine text-white">
+        <div key={toast.id} className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4">
+          <div className="toast-in pointer-events-auto flex items-center gap-2.5 rounded-full bg-ink py-2.5 pl-5 pr-3 text-sm font-bold text-paper shadow-[0_16px_40px_-12px_rgba(36,48,41,0.6)]">
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-pine text-white">
               <Icon name="check" size={12} strokeWidth={3.2} />
             </span>
             {toast.msg}
@@ -359,7 +426,7 @@ export default function App() {
                   toast.action?.fn();
                   setToast(null);
                 }}
-                className="ml-1 rounded-full bg-paper/15 px-3 py-1 text-xs font-bold text-gold transition-colors hover:bg-paper/25"
+                className="ml-1 rounded-full bg-paper/15 px-3 py-1 text-xs font-bold text-gold transition-all hover:bg-paper/25"
               >
                 {toast.action.label}
               </button>
@@ -370,3 +437,6 @@ export default function App() {
     </div>
   );
 }
+
+/* 让 useReveal 在 App 层也可用（保留导入一致性） */
+export { useReveal };

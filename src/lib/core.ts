@@ -1,8 +1,12 @@
 /* ============================================================
- * 一日手账 · 数据模型 / 日期工具 / 本地存储 / 评分引擎
+ * 一日手账 v2 · 晨间规划 / 晚间复盘
+ * 数据模型 · 迁移 · 存储 · 评分 · 洞察 · 勋章 · 标签
  * ============================================================ */
 
-export type MoodKey = "happy" | "calm" | "okay" | "down" | "irritable";
+export type MoodKey = "happy" | "calm" | "down" | "anxious" | "tired";
+export type Priority = "high" | "mid" | "low";
+export type Mastery = "none" | "part" | "full";
+export type WeatherKey = "sunny" | "cloudy" | "rain" | "storm" | "snow" | "wind";
 
 export interface MoodDef {
   key: MoodKey;
@@ -13,45 +17,41 @@ export interface MoodDef {
 
 export const MOODS: MoodDef[] = [
   { key: "happy", label: "开心", score: 100, color: "#e8a33d" },
-  { key: "calm", label: "平静", score: 88, color: "#3e9c6e" },
-  { key: "okay", label: "一般", score: 66, color: "#46639e" },
-  { key: "down", label: "失落", score: 42, color: "#7c8794" },
-  { key: "irritable", label: "烦躁", score: 34, color: "#d9482b" },
+  { key: "calm", label: "平静", score: 80, color: "#3e9c6e" },
+  { key: "down", label: "失落", score: 55, color: "#46639e" },
+  { key: "anxious", label: "焦虑", score: 45, color: "#e05b7a" },
+  { key: "tired", label: "疲惫", score: 35, color: "#8a7f9e" },
 ];
 
 export const moodOf = (k: MoodKey | null): MoodDef | null =>
   MOODS.find((m) => m.key === k) ?? null;
 
-/* ---------------- 天气 ---------------- */
-
-export type WeatherKey = "sunny" | "cloudy" | "rain" | "storm" | "snow" | "wind";
-
-export interface WeatherDef {
-  key: WeatherKey;
-  label: string;
-}
-
-export const WEATHERS: WeatherDef[] = [
+export const WEATHERS: { key: WeatherKey; label: string }[] = [
   { key: "sunny", label: "晴" },
   { key: "cloudy", label: "多云" },
-  { key: "rain", label: "雨" },
+  { key: "rain", label: "小雨" },
   { key: "storm", label: "雷雨" },
   { key: "snow", label: "雪" },
-  { key: "wind", label: "风" },
+  { key: "wind", label: "大风" },
 ];
 
-/* ---------------- 数据结构 ---------------- */
+export const WEATHER_COLORS: Record<WeatherKey, string> = {
+  sunny: "#e8a33d",
+  cloudy: "#9aa7b4",
+  rain: "#4a7fb5",
+  storm: "#7a5fa0",
+  snow: "#6b9ac4",
+  wind: "#7ca982",
+};
+
+/* ---------------- 数据结构 v2 ---------------- */
 
 export interface WorkItem {
   id: string;
   text: string;
   done: boolean;
-}
-
-export interface ActivityItem {
-  id: string;
-  type: string;
-  note: string;
+  priority: Priority;
+  tags: string[];
 }
 
 export interface StudyItem {
@@ -60,6 +60,22 @@ export interface StudyItem {
   planMin: number;
   actualMin: number;
   checked: boolean;
+  mastery: Mastery;
+  toReview: boolean;
+}
+
+export interface ActivityItem {
+  id: string;
+  type: string;
+  time: string;
+  people: string;
+  note: string;
+}
+
+export interface ExpenseItem {
+  id: string;
+  item: string;
+  amount: number;
 }
 
 export interface ImageRow {
@@ -69,17 +85,35 @@ export interface ImageRow {
 }
 
 export interface DayData {
+  v: 2;
   mood: MoodKey | null;
-  energy: number; // 1 - 10
+  energy: number;
   moodNote: string;
   weather: WeatherKey | null;
   place: string;
   workItems: WorkItem[];
+  workGoals: string[];
   workNote: string;
-  life: { food: string; clothing: string; home: string; transport: string };
+  workBlockers: string;
+  workTomorrow: string;
+  life: {
+    breakfast: string;
+    lunch: string;
+    dinner: string;
+    water: number;
+    dietNote: string;
+    location: string;
+    transport: string;
+    home: string;
+    shopping: string;
+  };
+  expenses: ExpenseItem[];
   activities: ActivityItem[];
   records: { vlog: boolean; photo: boolean; social: boolean; showcase: boolean };
+  photos: string[];
   recordNote: string;
+  recordTags: string[];
+  isPublic: boolean;
   sleep: {
     planBed: string;
     planWake: string;
@@ -87,35 +121,62 @@ export interface DayData {
     actWake: string;
     nextBed: string;
     nextWake: string;
+    quality: number; // 0 未评，1-5
   };
   studyItems: StudyItem[];
   studyNote: string;
-  fitness: { plan: string; actual: string; next: string };
+  studyNext: string;
+  fitness: { plan: string; detail: string; actual: string; weight: string; feel: string; next: string };
   image: { skincare: ImageRow; hair: ImageRow; outfit: ImageRow };
-  selfScore: number; // 0 = 未自评，1-10
+  outfitPhoto: string;
+  selfScore: number;
+  scoreOverride: number; // 0 = 自动
+  scoreNote: string;
 }
 
 export const emptyImageRow = (): ImageRow => ({ learn: "", actual: "", next: "" });
 
 export function emptyDay(): DayData {
   return {
+    v: 2,
     mood: null,
     energy: 6,
     moodNote: "",
     weather: null,
     place: "",
     workItems: [],
+    workGoals: ["", "", ""],
     workNote: "",
-    life: { food: "", clothing: "", home: "", transport: "" },
+    workBlockers: "",
+    workTomorrow: "",
+    life: {
+      breakfast: "",
+      lunch: "",
+      dinner: "",
+      water: 0,
+      dietNote: "",
+      location: "",
+      transport: "",
+      home: "",
+      shopping: "",
+    },
+    expenses: [],
     activities: [],
     records: { vlog: false, photo: false, social: false, showcase: false },
+    photos: [],
     recordNote: "",
-    sleep: { planBed: "", planWake: "", actBed: "", actWake: "", nextBed: "", nextWake: "" },
+    recordTags: [],
+    isPublic: false,
+    sleep: { planBed: "", planWake: "", actBed: "", actWake: "", nextBed: "", nextWake: "", quality: 0 },
     studyItems: [],
     studyNote: "",
-    fitness: { plan: "", actual: "", next: "" },
+    studyNext: "",
+    fitness: { plan: "", detail: "", actual: "", weight: "", feel: "", next: "" },
     image: { skincare: emptyImageRow(), hair: emptyImageRow(), outfit: emptyImageRow() },
+    outfitPhoto: "",
     selfScore: 0,
+    scoreOverride: 0,
+    scoreNote: "",
   };
 }
 
@@ -141,27 +202,71 @@ export interface ModuleMeta {
 }
 
 export const MODULES: Record<ModuleKey, ModuleMeta> = {
-  work: { label: "工作", en: "WORK", color: "#3d74c0", weight: 18, hint: "列出今日任务，逐项打勾" },
-  study: { label: "学习", en: "STUDY", color: "#2c8c99", weight: 16, hint: "规划 · 实际 · 检查 · 执行" },
-  sleep: { label: "睡眠", en: "SLEEP", color: "#46639e", weight: 14, hint: "昨晚计划 · 实际 · 明日规划" },
-  mood: { label: "心情", en: "MOOD", color: "#e05b7a", weight: 12, hint: "此刻的情绪与能量值" },
-  fitness: { label: "健身", en: "FITNESS", color: "#d9482b", weight: 10, hint: "计划 · 实际 · 下一步" },
-  life: { label: "生活", en: "LIFE", color: "#3e9c6e", weight: 10, hint: "衣食住行，好好生活" },
-  records: { label: "记录", en: "RECORDS", color: "#a24e9c", weight: 8, hint: "vlog · 拍照 · 社交 · 展示面" },
-  activities: { label: "活动", en: "EVENTS", color: "#e8a33d", weight: 6, hint: "聚餐 · 电影 · 逛街……" },
-  image: { label: "形象", en: "IMAGE", color: "#8fa63b", weight: 6, hint: "护肤 · 发型 · 穿搭" },
+  work: { label: "工作", en: "WORK", color: "#3d74c0", weight: 20, hint: "目标 · 待办 · 复盘卡点" },
+  study: { label: "学习", en: "STUDY", color: "#2c8c99", weight: 15, hint: "规划 · 执行 · 检查 · 复习" },
+  sleep: { label: "睡眠", en: "SLEEP", color: "#46639e", weight: 15, hint: "计划 · 实际 · 质量 · 明日" },
+  mood: { label: "情绪", en: "MOOD", color: "#e05b7a", weight: 15, hint: "情绪 · 能量 · 七天曲线" },
+  fitness: { label: "健身", en: "FITNESS", color: "#d9482b", weight: 10, hint: "训练 · 体重 · 身体感受" },
+  image: { label: "形象", en: "IMAGE", color: "#8fa63b", weight: 10, hint: "护肤 · 发型 · 穿搭" },
+  life: { label: "生活", en: "LIFE", color: "#3e9c6e", weight: 7, hint: "三餐 · 饮水 · 居住 · 出行" },
+  activities: { label: "活动", en: "EVENTS", color: "#e8a33d", weight: 5, hint: "聚餐 · 电影 · 逛街…" },
+  records: { label: "记录", en: "RECORDS", color: "#a24e9c", weight: 3, hint: "照片 · 随笔 · 标签" },
 };
 
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
+
+/* ---------------- 设置 ---------------- */
+
+export interface Settings {
+  modules: Record<ModuleKey, boolean>;
+  weights: Record<ModuleKey, number>;
+  spending: boolean;
+  reminders: { morning: boolean; evening: boolean };
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  modules: MODULE_KEYS.reduce((acc, k) => ({ ...acc, [k]: true }), {} as Record<ModuleKey, boolean>),
+  weights: MODULE_KEYS.reduce(
+    (acc, k) => ({ ...acc, [k]: MODULES[k].weight }),
+    {} as Record<ModuleKey, number>
+  ),
+  spending: true,
+  reminders: { morning: false, evening: false },
+};
+
+const SETTINGS_KEY = "dayledger:settings";
+
+export function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return structuredClone(DEFAULT_SETTINGS);
+    const p = JSON.parse(raw) as Partial<Settings>;
+    const base = structuredClone(DEFAULT_SETTINGS);
+    return {
+      modules: { ...base.modules, ...(p.modules ?? {}) },
+      weights: { ...base.weights, ...(p.weights ?? {}) },
+      spending: p.spending ?? base.spending,
+      reminders: { ...base.reminders, ...(p.reminders ?? {}) },
+    };
+  } catch {
+    return structuredClone(DEFAULT_SETTINGS);
+  }
+}
+
+export function saveSettings(s: Settings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    /* ignore */
+  }
+}
 
 /* ---------------- 日期工具 ---------------- */
 
 export const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 export const keyOf = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export const todayKey = (): string => keyOf(new Date());
 
@@ -180,7 +285,6 @@ export const fmtCN = (d: Date): string => `${d.getMonth() + 1}月${d.getDate()}�
 
 export const isTodayKey = (k: string): boolean => k === todayKey();
 
-/** 所在周（周一 ~ 周日） */
 export const weekOf = (d: Date): Date[] => {
   const off = (d.getDay() + 6) % 7;
   return Array.from({ length: 7 }, (_, i) => addDays(d, i - off));
@@ -199,6 +303,11 @@ const INDEX_KEY = "dayledger:index";
 export interface DayMeta {
   score: number;
   filled: boolean;
+  mood: MoodKey | null;
+  study: boolean;
+  fit: boolean;
+  q: number; // 睡眠质量
+  photo: boolean;
 }
 
 export type LedgerIndex = Record<string, DayMeta>;
@@ -213,28 +322,123 @@ export function loadIndex(): LedgerIndex {
   }
 }
 
+/** v1 → v2 迁移 */
+function migrate(raw: Record<string, unknown>): DayData {
+  const b = emptyDay();
+  const r = raw as Record<string, never> & Record<string, unknown>;
+  const pick = <T,>(k: string, fallback: T): T =>
+    (r[k] === undefined || r[k] === null ? fallback : (r[k] as T));
+  try {
+    b.mood = (["happy", "calm", "down"].includes(pick<string>("mood", ""))
+      ? pick<MoodKey>("mood", "calm")
+      : null) as MoodKey | null;
+    if (pick<string>("mood", "") === "okay") b.mood = "calm";
+    if (pick<string>("mood", "") === "irritable") b.mood = "anxious";
+    b.energy = pick<number>("energy", 6);
+    b.moodNote = pick<string>("moodNote", "");
+    b.weather = (pick<string>("weather", "") || null) as WeatherKey | null;
+    b.place = pick<string>("place", "");
+    b.workItems = (pick<Array<Record<string, unknown>>>("workItems", []) || []).map((it) => ({
+      id: String(it.id ?? uid()),
+      text: String(it.text ?? ""),
+      done: !!it.done,
+      priority: (["high", "mid", "low"].includes(String(it.priority)) ? it.priority : "mid") as Priority,
+      tags: Array.isArray(it.tags) ? (it.tags as string[]) : [],
+    }));
+    b.workNote = pick<string>("workNote", "");
+    const life = pick<Record<string, string>>("life", {});
+    b.life.breakfast = life?.food ?? "";
+    b.life.home = life?.home ?? "";
+    b.life.transport = life?.transport ?? "";
+    const rec = pick<Record<string, boolean>>("records", {});
+    b.records = {
+      vlog: !!rec?.vlog,
+      photo: !!rec?.photo,
+      social: !!rec?.social,
+      showcase: !!rec?.showcase,
+    };
+    b.recordNote = pick<string>("recordNote", "");
+    const sl = pick<Record<string, string>>("sleep", {});
+    b.sleep = {
+      planBed: sl?.planBed ?? "",
+      planWake: sl?.planWake ?? "",
+      actBed: sl?.actBed ?? "",
+      actWake: sl?.actWake ?? "",
+      nextBed: sl?.nextBed ?? "",
+      nextWake: sl?.nextWake ?? "",
+      quality: 0,
+    };
+    b.studyItems = (pick<Array<Record<string, unknown>>>("studyItems", []) || []).map((it) => ({
+      id: String(it.id ?? uid()),
+      subject: String(it.subject ?? ""),
+      planMin: Number(it.planMin ?? 0),
+      actualMin: Number(it.actualMin ?? 0),
+      checked: !!it.checked,
+      mastery: "none" as Mastery,
+      toReview: false,
+    }));
+    b.studyNote = pick<string>("studyNote", "");
+    const ft = pick<Record<string, string>>("fitness", {});
+    b.fitness = {
+      plan: ft?.plan ?? "",
+      detail: "",
+      actual: ft?.actual ?? "",
+      weight: "",
+      feel: "",
+      next: ft?.next ?? "",
+    };
+    const img = pick<Record<string, Record<string, string>>>("image", {});
+    (["skincare", "hair", "outfit"] as const).forEach((k) => {
+      b.image[k] = {
+        learn: img?.[k]?.learn ?? "",
+        actual: img?.[k]?.actual ?? "",
+        next: img?.[k]?.next ?? "",
+      };
+    });
+    b.activities = (pick<Array<Record<string, unknown>>>("activities", []) || []).map((a) => ({
+      id: String(a.id ?? uid()),
+      type: String(a.type ?? "其他"),
+      time: "",
+      people: "",
+      note: String(a.note ?? ""),
+    }));
+    b.selfScore = pick<number>("selfScore", 0);
+  } catch {
+    return b;
+  }
+  return b;
+}
+
 export function loadDay(k: string): DayData {
   try {
     const raw = localStorage.getItem(DATA_PREFIX + k);
     if (!raw) return emptyDay();
-    const parsed = JSON.parse(raw) as Partial<DayData>;
-    const base = emptyDay();
-    return {
-      ...base,
-      ...parsed,
-      life: { ...base.life, ...(parsed.life ?? {}) },
-      records: { ...base.records, ...(parsed.records ?? {}) },
-      sleep: { ...base.sleep, ...(parsed.sleep ?? {}) },
-      fitness: { ...base.fitness, ...(parsed.fitness ?? {}) },
-      image: {
-        skincare: { ...base.image.skincare, ...(parsed.image?.skincare ?? {}) },
-        hair: { ...base.image.hair, ...(parsed.image?.hair ?? {}) },
-        outfit: { ...base.image.outfit, ...(parsed.image?.outfit ?? {}) },
-      },
-      workItems: Array.isArray(parsed.workItems) ? parsed.workItems : [],
-      studyItems: Array.isArray(parsed.studyItems) ? parsed.studyItems : [],
-      activities: Array.isArray(parsed.activities) ? parsed.activities : [],
-    };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed && parsed.v === 2) {
+      const base = emptyDay();
+      const p = parsed as unknown as Partial<DayData>;
+      return {
+        ...base,
+        ...p,
+        life: { ...base.life, ...(p.life ?? {}) },
+        records: { ...base.records, ...(p.records ?? {}) },
+        sleep: { ...base.sleep, ...(p.sleep ?? {}) },
+        fitness: { ...base.fitness, ...(p.fitness ?? {}) },
+        image: {
+          skincare: { ...base.image.skincare, ...(p.image?.skincare ?? {}) },
+          hair: { ...base.image.hair, ...(p.image?.hair ?? {}) },
+          outfit: { ...base.image.outfit, ...(p.image?.outfit ?? {}) },
+        },
+        workItems: Array.isArray(p.workItems) ? p.workItems : [],
+        workGoals: Array.isArray(p.workGoals) && p.workGoals.length === 3 ? p.workGoals : ["", "", ""],
+        studyItems: Array.isArray(p.studyItems) ? p.studyItems : [],
+        activities: Array.isArray(p.activities) ? p.activities : [],
+        expenses: Array.isArray(p.expenses) ? p.expenses : [],
+        photos: Array.isArray(p.photos) ? p.photos : [],
+        recordTags: Array.isArray(p.recordTags) ? p.recordTags : [],
+      };
+    }
+    return migrate(parsed);
   } catch {
     return emptyDay();
   }
@@ -244,10 +448,19 @@ export function saveDay(k: string, d: DayData): void {
   try {
     localStorage.setItem(DATA_PREFIX + k, JSON.stringify(d));
     const idx = loadIndex();
-    idx[k] = { score: computeScore(d).total, filled: hasContent(d) };
+    const study = d.studyItems.some((i) => i.actualMin > 0 || i.checked);
+    idx[k] = {
+      score: computeScore(d).total,
+      filled: hasContent(d),
+      mood: d.mood,
+      study,
+      fit: !!d.fitness.actual.trim(),
+      q: d.sleep.quality,
+      photo: d.photos.length > 0 || d.records.photo || !!d.outfitPhoto,
+    };
     localStorage.setItem(INDEX_KEY, JSON.stringify(idx));
   } catch {
-    /* 存储不可用时静默失败 */
+    /* 存储已满等异常静默处理 */
   }
 }
 
@@ -259,18 +472,24 @@ export const uid = (): string =>
 /* ---------------- 内容完整度 ---------------- */
 
 export function hasContent(d: DayData): boolean {
-  if (d.weather || d.place.trim()) return true;
-  if (d.mood || d.moodNote.trim()) return true;
-  if (d.workItems.length || d.workNote.trim()) return true;
-  if (Object.values(d.life).some((v) => v.trim())) return true;
+  if (d.weather || d.place.trim() || d.mood || d.moodNote.trim()) return true;
+  if (d.workItems.length || d.workGoals.some((g) => g.trim()) || d.workNote.trim()) return true;
+  const L = d.life;
+  if (
+    L.breakfast || L.lunch || L.dinner || L.water > 0 || L.dietNote ||
+    L.location || L.transport || L.home || L.shopping
+  ) return true;
+  if (d.expenses.length) return true;
   if (d.activities.length) return true;
-  if (Object.values(d.records).some(Boolean) || d.recordNote.trim()) return true;
-  if (Object.values(d.sleep).some((v) => v.trim())) return true;
-  if (d.studyItems.length || d.studyNote.trim()) return true;
+  if (Object.values(d.records).some(Boolean) || d.recordNote.trim() || d.photos.length || d.recordTags.length) return true;
+  if (Object.entries(d.sleep).some(([kk, v]) => kk !== "quality" && String(v).trim())) return true;
+  if (d.sleep.quality > 0) return true;
+  if (d.studyItems.length || d.studyNote.trim() || d.studyNext.trim()) return true;
   if (Object.values(d.fitness).some((v) => v.trim())) return true;
-  const img = [d.image.skincare, d.image.hair, d.image.outfit];
-  if (img.some((r) => r.learn.trim() || r.actual.trim() || r.next.trim())) return true;
-  if (d.selfScore > 0) return true;
+  const rows = [d.image.skincare, d.image.hair, d.image.outfit];
+  if (rows.some((r) => r.learn.trim() || r.actual.trim() || r.next.trim())) return true;
+  if (d.outfitPhoto) return true;
+  if (d.selfScore > 0 || d.scoreOverride > 0 || d.scoreNote.trim()) return true;
   return false;
 }
 
@@ -289,8 +508,7 @@ export interface DayScore {
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
-/** a 入睡 -> b 起床（跨零点）的分钟数 */
-function sleepSpan(bed: string, wake: string): number {
+export function sleepSpanMin(bed: string, wake: string): number {
   const [bh, bm] = bed.split(":").map(Number);
   const [wh, wm] = wake.split(":").map(Number);
   let m = wh * 60 + wm - (bh * 60 + bm);
@@ -306,7 +524,10 @@ const startMin = (t: string) => {
 function workScore(d: DayData): number {
   const n = d.workItems.length;
   if (!n) return 0;
-  return (d.workItems.filter((i) => i.done).length / n) * 100;
+  const doneRate = d.workItems.filter((i) => i.done).length / n;
+  const goals = d.workGoals.filter((g) => g.trim()).length;
+  const review = d.workNote.trim() || d.workBlockers.trim() || d.workTomorrow.trim() ? 1 : 0;
+  return clamp(doneRate * 78 + Math.min(goals, 3) * 4 + review * 10, 0, 100);
 }
 
 function studyScore(d: DayData): number {
@@ -316,9 +537,10 @@ function studyScore(d: DayData): number {
   d.studyItems.forEach((it) => {
     exec += it.planMin > 0 ? Math.min(it.actualMin / it.planMin, 1) : it.actualMin > 0 ? 1 : 0;
   });
-  const execPct = (exec / n) * 100;
-  const checkPct = (d.studyItems.filter((i) => i.checked).length / n) * 100;
-  return execPct * 0.8 + checkPct * 0.2;
+  const execPct = exec / n;
+  const checkPct = d.studyItems.filter((i) => i.checked).length / n;
+  const masteryPts = d.studyItems.reduce((s, i) => s + (i.mastery === "full" ? 1 : i.mastery === "part" ? 0.5 : 0), 0) / n;
+  return clamp(execPct * 62 + checkPct * 16 + masteryPts * 22, 0, 100);
 }
 
 function sleepScore(d: DayData): number {
@@ -326,13 +548,15 @@ function sleepScore(d: DayData): number {
   const hasPlan = !!(s.planBed && s.planWake);
   const hasAct = !!(s.actBed && s.actWake);
   if (hasAct) {
-    const hours = sleepSpan(s.actBed, s.actWake) / 60;
+    const hours = sleepSpanMin(s.actBed, s.actWake) / 60;
     let sc = 100 - Math.min(Math.abs(hours - 8) * 30, 80);
     if (hasPlan) {
       const drift = Math.abs(startMin(s.actBed) - startMin(s.planBed));
       if (drift <= 30) sc = Math.min(100, sc + 8);
       else if (drift <= 60) sc = Math.min(100, sc + 4);
     }
+    sc = clamp(sc, 10, 100);
+    if (s.quality > 0) sc = sc * 0.8 + s.quality * 20 * 0.2;
     return clamp(sc, 10, 100);
   }
   return hasPlan ? 35 : 0;
@@ -345,34 +569,43 @@ function moodScore(d: DayData): number {
 }
 
 function fitnessScore(d: DayData): number {
-  const p = d.fitness.plan.trim();
-  const a = d.fitness.actual.trim();
-  if (p && a) return 100;
-  if (a) return 72;
-  if (p) return 38;
-  return 0;
+  const f = d.fitness;
+  let sc = 0;
+  if (f.plan.trim() || f.detail.trim()) sc += 35;
+  if (f.actual.trim()) sc += 45;
+  if (f.next.trim()) sc += 12;
+  if (f.feel.trim()) sc += 8;
+  return clamp(sc, 0, 100);
 }
 
 function lifeScore(d: DayData): number {
-  const f = [d.life.food, d.life.clothing, d.life.home, d.life.transport].filter((v) =>
-    v.trim()
-  ).length;
-  return (f / 4) * 100;
+  const L = d.life;
+  const meals = [L.breakfast, L.lunch, L.dinner].filter((v) => v.trim()).length;
+  let sc = (meals / 3) * 40;
+  if (L.water > 0) sc += 10;
+  if (L.location.trim() || L.transport.trim()) sc += 25;
+  if (L.home.trim() || L.shopping.trim()) sc += 25;
+  return clamp(sc, 0, 100);
 }
 
 function recordsScore(d: DayData): number {
-  const c = [d.records.vlog, d.records.photo, d.records.social, d.records.showcase].filter(
-    Boolean
-  ).length;
-  return (c / 4) * 85 + (d.recordNote.trim() ? 15 : 0);
+  let sc = 0;
+  if (d.photos.length > 0) sc += 30;
+  if (d.records.vlog) sc += 15;
+  if (d.records.social) sc += 15;
+  if (d.records.showcase || d.isPublic) sc += 15;
+  if (d.recordNote.trim()) sc += 15;
+  if (d.recordTags.length) sc += 10;
+  return clamp(sc, 0, 100);
 }
 
 function activitiesScore(d: DayData): number {
   const n = d.activities.length;
   if (!n) return 0;
-  const base = (Math.min(n, 2) / 2) * 70;
-  const noted = (d.activities.filter((a) => a.note.trim()).length / n) * 30;
-  return base + noted;
+  const base = (Math.min(n, 2) / 2) * 60;
+  const detailed =
+    (d.activities.filter((a) => a.note.trim() || a.people.trim() || a.time.trim()).length / n) * 40;
+  return base + detailed;
 }
 
 function imageScore(d: DayData): number {
@@ -382,7 +615,9 @@ function imageScore(d: DayData): number {
     if (r.actual.trim()) f++;
     if (r.next.trim()) f++;
   });
-  return (f / 9) * 100;
+  let sc = (f / 9) * 92;
+  if (d.outfitPhoto) sc += 8;
+  return clamp(sc, 0, 100);
 }
 
 const SCORERS: Record<ModuleKey, (d: DayData) => number> = {
@@ -397,22 +632,33 @@ const SCORERS: Record<ModuleKey, (d: DayData) => number> = {
   image: imageScore,
 };
 
-export function computeScore(d: DayData): DayScore {
-  const parts = MODULE_KEYS.map((k) => ({
+export function computeScore(
+  d: DayData,
+  weights?: Record<ModuleKey, number>,
+  enabled?: ModuleKey[]
+): DayScore {
+  const w = weights ?? DEFAULT_SETTINGS.weights;
+  const en = enabled ?? MODULE_KEYS;
+  const parts = en.map((k) => ({
     key: k,
     score: Math.round(SCORERS[k](d)),
-    weight: MODULES[k].weight,
+    weight: w[k] ?? MODULES[k].weight,
   }));
-  const total = Math.round(parts.reduce((s, p) => s + p.score * p.weight, 0) / 100);
+  const sumW = parts.reduce((s, p) => s + p.weight, 0) || 1;
+  const total = Math.round(parts.reduce((s, p) => s + p.score * p.weight, 0) / sumW);
   return { total, parts };
 }
 
+export function scoreVerdict(total: number): { label: string; color: string; tip: string } {
+  if (total >= 85) return { label: "优秀", color: "#d9482b", tip: "闪闪发光的一天，值得给自己盖个章。" };
+  if (total >= 70) return { label: "不错", color: "#2e6b54", tip: "节奏很稳，保持住这个状态。" };
+  if (total >= 55) return { label: "尚可", color: "#e8a33d", tip: "基本盘在线，明天再往前挪一点。" };
+  if (total >= 35) return { label: "需调整", color: "#46639e", tip: "找到今天最耗能的一件事，明天绕开它。" };
+  return { label: "重新出发", color: "#7c8794", tip: "低分不代表糟糕的一天，只代表新的一页。" };
+}
+
 export function encouragement(total: number): string {
-  if (total >= 85) return "闪闪发光的一天，你值得被自己表扬。";
-  if (total >= 70) return "很稳的一天，节奏在你手里。";
-  if (total >= 50) return "还不错，明天再往前挪一点点。";
-  if (total >= 25) return "慢慢来，把一件事做完就是胜利。";
-  return "新的一页已经铺开，从第一条记录开始。";
+  return scoreVerdict(total).tip;
 }
 
 /* ---------------- 文案 ---------------- */
@@ -433,50 +679,81 @@ export const fmtDur = (mins: number): string => {
   return `${h}小时${m}分`;
 };
 
+export const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
+  high: { label: "高", color: "#d9482b" },
+  mid: { label: "中", color: "#e8a33d" },
+  low: { label: "低", color: "#7c8794" },
+};
+
+export const MASTERY_META: Record<Mastery, { label: string; color: string }> = {
+  none: { label: "未掌握", color: "#9a9484" },
+  part: { label: "部分掌握", color: "#e8a33d" },
+  full: { label: "已掌握", color: "#3e9c6e" },
+};
+
+export const ACT_TYPES = ["聚餐", "电影", "逛街", "演出", "看展", "运动", "散步", "社交", "独处", "其他"];
+
+export const RECORD_TAG_PRESETS = ["日常", "探店", "自拍", "穿搭", "美食", "旅行", "学习", "健身"];
+
+export const WORK_TEMPLATES = ["晨会同步", "回复邮件", "周报整理", "专注攻坚 2h", "需求评审"];
+
+export const STUDY_TEMPLATES = ["英语", "阅读", "刷题", "专业课", "技能练习"];
+
+export const FITNESS_TYPES = ["力量", "有氧", "跑步", "瑜伽", "游泳", "球类", "拉伸", "休息"];
+
+export const SLEEP_PRESETS = [
+  { label: "早睡", bed: "22:30", wake: "06:30" },
+  { label: "规律", bed: "23:30", wake: "07:30" },
+  { label: "晚睡", bed: "00:30", wake: "08:30" },
+];
+
+/* ---------------- 日总结 ---------------- */
+
 export function buildSummary(d: DayData, date: Date, score: DayScore): string {
   const L: string[] = [];
   L.push(
-    `${date.getMonth() + 1}月${date.getDate()}日 · 周${WEEKDAYS[date.getDay()]} · 今日状态 ${score.total} 分`
+    `${date.getMonth() + 1}月${date.getDate()}日 · 周${WEEKDAYS[date.getDay()]} · 今日状态 ${score.total} 分 · ${scoreVerdict(score.total).label}`
   );
+  if (d.weather) L.push(`▸ 天气/地点：${WEATHERS.find((w) => w.key === d.weather)?.label ?? ""}${d.place ? ` · ${d.place}` : ""}`);
 
+  const goals = d.workGoals.filter((g) => g.trim());
   const wk = d.workItems;
   L.push(
-    wk.length
-      ? `▸ 工作：完成 ${wk.filter((i) => i.done).length}/${wk.length} 项${d.workNote.trim() ? `；备注「${d.workNote.trim()}」` : ""}`
+    wk.length || goals.length
+      ? `▸ 工作：目标 ${goals.length} 条；任务完成 ${wk.filter((i) => i.done).length}/${wk.length}${d.workBlockers.trim() ? `；卡点「${d.workBlockers.trim()}」` : ""}${d.workTomorrow.trim() ? `；明日「${d.workTomorrow.trim()}」` : ""}`
       : "▸ 工作：未记录"
   );
 
   if (d.studyItems.length) {
     const plan = d.studyItems.reduce((s, i) => s + (i.planMin || 0), 0);
     const act = d.studyItems.reduce((s, i) => s + (i.actualMin || 0), 0);
-    const rate = plan > 0 ? Math.round((Math.min(act, plan) / plan) * 100) : act > 0 ? 100 : 0;
-    L.push(
-      `▸ 学习：计划 ${plan} 分钟，实际 ${act} 分钟，执行率 ${rate}%，已检查 ${d.studyItems.filter((i) => i.checked).length} 项`
-    );
+    const reviews = d.studyItems.filter((i) => i.toReview).length;
+    L.push(`▸ 学习：计划 ${plan} 分 / 实际 ${act} 分，检查 ${d.studyItems.filter((i) => i.checked).length} 项${reviews ? `，待复习 ${reviews} 项` : ""}`);
   } else L.push("▸ 学习：未记录");
 
   const s = d.sleep;
-  const actSleep = s.actBed && s.actWake ? fmtDur(sleepSpan(s.actBed, s.actWake)) : null;
-  const planSleep = s.planBed && s.planWake ? fmtDur(sleepSpan(s.planBed, s.planWake)) : null;
-  const nextSleep = s.nextBed && s.nextWake ? `${s.nextBed} - ${s.nextWake}` : null;
+  const actSleep = s.actBed && s.actWake ? fmtDur(sleepSpanMin(s.actBed, s.actWake)) : null;
   L.push(
-    `▸ 睡眠：${actSleep ? `实际 ${actSleep}` : "实际未记录"}${planSleep ? `（计划 ${planSleep}）` : ""}${nextSleep ? `；明日计划 ${nextSleep}` : ""}`
+    `▸ 睡眠：${actSleep ? `实际 ${actSleep}` : "实际未记录"}${s.quality ? `，质量 ${s.quality}/5 星` : ""}${s.nextBed && s.nextWake ? `；明日 ${s.nextBed}-${s.nextWake}` : ""}`
   );
 
   const f = d.fitness;
   L.push(
     f.actual.trim()
-      ? `▸ 健身：${f.actual.trim()}${f.next.trim() ? `；下一步「${f.next.trim()}」` : ""}`
+      ? `▸ 健身：${f.actual.trim()}${f.weight ? `（${f.weight}kg）` : ""}${f.next.trim() ? `；下一步「${f.next.trim()}」` : ""}`
       : f.plan.trim()
-        ? `▸ 健身：计划了「${f.plan.trim()}」，尚未完成`
+        ? `▸ 健身：计划「${f.plan.trim()}」未完成`
         : "▸ 健身：未记录"
   );
 
   const lifeBits: string[] = [];
-  if (d.life.food.trim()) lifeBits.push(`食·${d.life.food.trim()}`);
-  if (d.life.clothing.trim()) lifeBits.push(`衣·${d.life.clothing.trim()}`);
-  if (d.life.home.trim()) lifeBits.push(`住·${d.life.home.trim()}`);
-  if (d.life.transport.trim()) lifeBits.push(`行·${d.life.transport.trim()}`);
+  if (d.life.breakfast) lifeBits.push(`早·${d.life.breakfast}`);
+  if (d.life.lunch) lifeBits.push(`午·${d.life.lunch}`);
+  if (d.life.dinner) lifeBits.push(`晚·${d.life.dinner}`);
+  if (d.life.water > 0) lifeBits.push(`水×${d.life.water}`);
+  if (d.life.location) lifeBits.push(`行·${d.life.location}`);
+  if (d.expenses.length)
+    lifeBits.push(`支出¥${d.expenses.reduce((ss, e) => ss + e.amount, 0).toFixed(0)}`);
   L.push(lifeBits.length ? `▸ 生活：${lifeBits.join("；")}` : "▸ 生活：未记录");
 
   L.push(
@@ -486,105 +763,18 @@ export function buildSummary(d: DayData, date: Date, score: DayScore): string {
   );
 
   const recs: string[] = [];
+  if (d.photos.length) recs.push(`照片×${d.photos.length}`);
   if (d.records.vlog) recs.push("Vlog");
-  if (d.records.photo) recs.push("拍照");
-  if (d.records.social) recs.push("社交");
-  if (d.records.showcase) recs.push("展示面");
-  L.push(
-    recs.length || d.recordNote.trim()
-      ? `▸ 记录：${recs.length ? recs.join("、") + " 已打卡" : ""}${d.recordNote.trim() ? `${recs.length ? "；" : ""}${d.recordNote.trim()}` : ""}`
-      : "▸ 记录：未打卡"
-  );
-
-  const imgRows: string[] = [];
-  ([
-    ["护肤", d.image.skincare],
-    ["发型", d.image.hair],
-    ["穿搭", d.image.outfit],
-  ] as [string, ImageRow][]).forEach(([name, r]) => {
-    if (r.learn.trim() || r.actual.trim() || r.next.trim()) imgRows.push(name);
-  });
-  L.push(imgRows.length ? `▸ 形象：已完成 ${imgRows.join("、")} 的记录` : "▸ 形象：未记录");
+  if (d.recordTags.length) recs.push(`#${d.recordTags.join(" #")}`);
+  L.push(recs.length || d.recordNote.trim() ? `▸ 记录：${[...recs, d.recordNote.trim()].filter(Boolean).join("；")}` : "▸ 记录：未打卡");
 
   const m = moodOf(d.mood);
-  L.push(
-    `▸ 心情：${m ? m.label : "未选择"} · 能量 ${d.energy}/10${d.moodNote.trim() ? ` · ${d.moodNote.trim()}` : ""}`
-  );
-
-  if (d.selfScore > 0) L.push(`▸ 自评：${d.selfScore}/10 分`);
+  L.push(`▸ 心情：${m ? m.label : "未选择"} · 能量 ${d.energy}/10${d.moodNote.trim() ? ` · ${d.moodNote.trim()}` : ""}`);
+  if (d.scoreNote.trim()) L.push(`▸ 一句话总结：${d.scoreNote.trim()}`);
   return L.join("\n");
 }
 
-/* ---------------- 快速模板 ---------------- */
-
-export const WORK_TEMPLATES = ["回复邮件", "开晨会", "深度工作 2 小时", "写周报", "整理文档"];
-
-export const STUDY_TEMPLATES = ["英语", "专业课", "阅读", "刷题"];
-
-export const SLEEP_PRESETS = [
-  { label: "睡满 8 小时", bed: "23:00", wake: "07:00" },
-  { label: "7.5 小时", bed: "23:30", wake: "07:00" },
-  { label: "7 小时", bed: "00:00", wake: "07:00" },
-];
-
-export const MODULE_TIPS: Record<ModuleKey, string> = {
-  work: "明天先写下最重要的 3 件事，挑一件「硬骨头」放在上午啃。",
-  study: "从 25 分钟一个番茄钟开始，完成后记得勾「已检查」。",
-  sleep: "今晚把上床时间提前 30 分钟，睡前一小时放下手机。",
-  mood: "情绪没有对错，写下「为什么」比打分更有用。",
-  fitness: "哪怕 10 分钟拉伸也算数，先让身体动起来。",
-  life: "好好吃一顿饭，把「食」这一栏认真填上。",
-  records: "随手拍一张今天的天空，记录不需要仪式感。",
-  activities: "约一个朋友，或者给自己安排一场电影。",
-  image: "今晚多花 3 分钟护肤，明天穿一套让自己开心的搭配。",
-};
-
-/* ---------------- 洞察分析 ---------------- */
-
-export interface NightPoint {
-  key: string;
-  weekday: string;
-  hours: number | null;
-}
-
-export interface SleepStats {
-  nights: number;
-  avg: number | null;
-  debt: number | null;
-}
-
-export function lastNights(
-  endKey: string,
-  n: number,
-  override?: { key: string; data: DayData }
-): NightPoint[] {
-  const end = parseKey(endKey);
-  const out: NightPoint[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const dt = addDays(end, -i);
-    const k = keyOf(dt);
-    const d = override && override.key === k ? override.data : loadDay(k);
-    const h =
-      d.sleep.actBed && d.sleep.actWake ? sleepSpan(d.sleep.actBed, d.sleep.actWake) / 60 : null;
-    out.push({
-      key: k,
-      weekday: WEEKDAYS[dt.getDay()],
-      hours: h === null ? null : Math.round(h * 10) / 10,
-    });
-  }
-  return out;
-}
-
-export function sleepStats(nights: NightPoint[]): SleepStats {
-  const hs = nights.map((x) => x.hours).filter((h): h is number => h !== null);
-  if (!hs.length) return { nights: 0, avg: null, debt: null };
-  const debt = hs.reduce((s, h) => s + (8 - h), 0);
-  return {
-    nights: hs.length,
-    avg: Math.round((hs.reduce((a, b) => a + b, 0) / hs.length) * 10) / 10,
-    debt: Math.round(debt * 10) / 10,
-  };
-}
+/* ---------------- 洞察 ---------------- */
 
 export interface TrendPoint {
   key: string;
@@ -593,267 +783,325 @@ export interface TrendPoint {
   mood: MoodKey | null;
 }
 
-export function trendOf(
-  endKey: string,
-  n: number,
-  override?: { key: string; data: DayData }
-): TrendPoint[] {
-  const end = parseKey(endKey);
-  const out: TrendPoint[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const dt = addDays(end, -i);
-    const k = keyOf(dt);
-    const d = override && override.key === k ? override.data : loadDay(k);
-    const filled = hasContent(d);
-    out.push({
+export function trendSeries(index: LedgerIndex, days: number, endDate = new Date()): TrendPoint[] {
+  return Array.from({ length: days }, (_, i) => {
+    const d = addDays(endDate, i - (days - 1));
+    const k = keyOf(d);
+    const meta = index[k];
+    return {
       key: k,
-      label: `${dt.getMonth() + 1}/${dt.getDate()}`,
-      score: filled ? computeScore(d).total : null,
-      mood: d.mood,
-    });
-  }
-  return out;
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      score: meta?.filled ? meta.score : null,
+      mood: meta?.mood ?? null,
+    };
+  });
 }
 
-export interface WeekStats {
+export interface HeatCell {
+  key: string;
+  day: number;
+  score: number | null;
+  filled: boolean;
+}
+
+export function monthHeat(date: Date, index: LedgerIndex): HeatCell[][] {
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const startOff = (first.getDay() + 6) % 7;
+  const cells: (HeatCell | null)[] = Array.from({ length: startOff }, () => null);
+  for (let i = 1; i <= daysInMonth; i++) {
+    const d = new Date(date.getFullYear(), date.getMonth(), i);
+    const k = keyOf(d);
+    const meta = index[k];
+    cells.push({
+      key: k,
+      day: i,
+      score: meta?.filled ? meta.score : null,
+      filled: !!meta?.filled,
+    });
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks: HeatCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7) as HeatCell[]);
+  return weeks;
+}
+
+export interface NightPoint {
+  key: string;
+  weekday: string;
+  hours: number | null;
+}
+
+export function sleepSeries(index: LedgerIndex, endDateKey: string, n = 7): NightPoint[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = addDays(parseKey(endDateKey), i - (n - 1));
+    const k = keyOf(d);
+    const meta = index[k];
+    let hours: number | null = null;
+    if (meta?.filled) {
+      const day = loadDay(k);
+      if (day.sleep.actBed && day.sleep.actWake) {
+        hours = Math.round((sleepSpanMin(day.sleep.actBed, day.sleep.actWake) / 60) * 10) / 10;
+      }
+    }
+    return { key: k, weekday: WEEKDAYS[d.getDay()], hours };
+  });
+}
+
+export function sleepStats(nights: NightPoint[]): { avg: string | null; debt: number | null } {
+  const hs = nights.filter((x) => x.hours !== null).map((x) => x.hours as number);
+  if (!hs.length) return { avg: null, debt: null };
+  const avg = hs.reduce((a, b) => a + b, 0) / hs.length;
+  const debt = Math.round((hs.reduce((a, b) => a + (8 - b), 0) / hs.length) * 10) / 10;
+  return { avg: avg.toFixed(1), debt };
+}
+
+export interface WeekReview {
   avg: number | null;
-  best: { key: string; score: number } | null;
-  filledDays: number;
-  tasksDone: number;
-  tasksTotal: number;
+  best: { label: string; score: number } | null;
+  work: { done: number; total: number };
   studyPlan: number;
-  studyActual: number;
-  fitnessDays: number;
-  moodCounts: Record<MoodKey, number>;
-  moduleAvg: { key: ModuleKey; value: number }[];
+  studyAct: number;
+  fitDays: number;
+  moodDist: Record<MoodKey, number>;
+  partsAvg: { key: ModuleKey; avg: number }[];
   weakest: ModuleKey | null;
 }
 
-function hasModuleData(d: DayData, k: ModuleKey): boolean {
-  switch (k) {
-    case "work":
-      return d.workItems.length > 0 || !!d.workNote.trim();
-    case "study":
-      return d.studyItems.length > 0;
-    case "sleep":
-      return Object.values(d.sleep).some((v) => v.trim());
-    case "mood":
-      return !!d.mood || !!d.moodNote.trim();
-    case "fitness":
-      return Object.values(d.fitness).some((v) => v.trim());
-    case "life":
-      return Object.values(d.life).some((v) => v.trim());
-    case "records":
-      return Object.values(d.records).some(Boolean) || !!d.recordNote.trim();
-    case "activities":
-      return d.activities.length > 0;
-    case "image":
-      return [d.image.skincare, d.image.hair, d.image.outfit].some(
-        (r) => r.learn.trim() || r.actual.trim() || r.next.trim()
-      );
-  }
+const WEAK_TIPS: Record<ModuleKey, string> = {
+  work: "从明天早上的 3 条核心目标开始，任务先列再做。",
+  study: "把「下一步计划」写下来，明早会自动提醒你带过来。",
+  sleep: "今晚试试 23:30 前上床，先固定入睡时间。",
+  mood: "情绪低落时，先记一句诱因——看见它，就轻了一半。",
+  fitness: "哪怕 10 分钟拉伸也算训练，先让连续天数跑起来。",
+  life: "三餐里先认真记一顿，好好吃饭是最低成本的正事。",
+  records: "今天拍一张照片就好，不用追求精致。",
+  activities: "给自己约一件小事：散步、电影或一顿好饭。",
+  image: "护肤从最简单的三步开始：清洁、保湿、防晒。",
+};
+
+export function weekReview(index: LedgerIndex, week: Date[], enabled: ModuleKey[]): WeekReview {
+  const res: WeekReview = {
+    avg: null,
+    best: null,
+    work: { done: 0, total: 0 },
+    studyPlan: 0,
+    studyAct: 0,
+    fitDays: 0,
+    moodDist: { happy: 0, calm: 0, down: 0, anxious: 0, tired: 0 },
+    partsAvg: [],
+    weakest: null,
+  };
+  const totals: number[] = [];
+  const sums: Record<string, { s: number; n: number }> = {};
+  week.forEach((d) => {
+    const k = keyOf(d);
+    const meta = index[k];
+    if (!meta?.filled) return;
+    totals.push(meta.score);
+    if (!res.best || meta.score > res.best.score)
+      res.best = { label: `${d.getMonth() + 1}/${d.getDate()}`, score: meta.score };
+    if (meta.mood) res.moodDist[meta.mood]++;
+    if (meta.fit) res.fitDays++;
+    const day = loadDay(k);
+    res.work.total += day.workItems.length;
+    res.work.done += day.workItems.filter((i) => i.done).length;
+    res.studyPlan += day.studyItems.reduce((s, i) => s + i.planMin, 0);
+    res.studyAct += day.studyItems.reduce((s, i) => s + i.actualMin, 0);
+    const sc = computeScore(day, undefined, enabled);
+    sc.parts.forEach((p) => {
+      if (!sums[p.key]) sums[p.key] = { s: 0, n: 0 };
+      sums[p.key].s += p.score;
+      sums[p.key].n++;
+    });
+  });
+  if (totals.length) res.avg = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+  res.partsAvg = enabled
+    .map((k) => ({ key: k, avg: sums[k]?.n ? Math.round(sums[k].s / sums[k].n) : 0 }))
+    .sort((a, b) => a.avg - b.avg);
+  res.weakest = res.partsAvg.length && totals.length ? res.partsAvg[0].key : null;
+  return res;
 }
 
-export function reviewOfDays(keys: string[], days: DayData[]): WeekStats {
-  const moduleSum = {} as Record<ModuleKey, { sum: number; n: number }>;
-  MODULE_KEYS.forEach((k) => (moduleSum[k] = { sum: 0, n: 0 }));
-  const moodCounts: Record<MoodKey, number> = {
-    happy: 0,
-    calm: 0,
-    okay: 0,
-    down: 0,
-    irritable: 0,
-  };
-  let scoreSum = 0;
-  let filled = 0;
-  let best: WeekStats["best"] = null;
-  let tasksDone = 0;
-  let tasksTotal = 0;
-  let studyPlan = 0;
-  let studyActual = 0;
-  let fitnessDays = 0;
+export const weakTip = (k: ModuleKey): string => WEAK_TIPS[k];
 
-  keys.forEach((k, i) => {
-    const d = days[i];
-    if (!hasContent(d)) return;
-    filled++;
-    const sc = computeScore(d);
-    scoreSum += sc.total;
-    if (!best || sc.total > best.score) best = { key: k, score: sc.total };
-    sc.parts.forEach((p) => {
-      if (p.score > 0 || hasModuleData(d, p.key)) {
-        moduleSum[p.key].sum += p.score;
-        moduleSum[p.key].n++;
+/* ---------------- 勋章 ---------------- */
+
+export interface Medal {
+  id: string;
+  label: string;
+  desc: string;
+  got: boolean;
+  cur: number;
+  target: number;
+  color: string;
+}
+
+function streakOf(index: LedgerIndex, pred: (m: DayMeta) => boolean): number {
+  let s = 0;
+  let cur = new Date();
+  if (!index[keyOf(cur)] || !pred(index[keyOf(cur)])) cur = addDays(cur, -1);
+  while (index[keyOf(cur)] && pred(index[keyOf(cur)])) {
+    s++;
+    cur = addDays(cur, -1);
+  }
+  return s;
+}
+
+const countOf = (index: LedgerIndex, pred: (m: DayMeta) => boolean): number =>
+  Object.values(index).filter((m) => m?.filled && pred(m)).length;
+
+export function computeMedals(index: LedgerIndex): Medal[] {
+  const reviewS = streakOf(index, (m) => m.filled);
+  const studyS = streakOf(index, (m) => m.study);
+  const fitS = streakOf(index, (m) => m.fit);
+  const totalDays = Object.values(index).filter((m) => m?.filled).length;
+  const goodSleep = countOf(index, (m) => m.q >= 4);
+  const photoDays = countOf(index, (m) => m.photo);
+  const happyDays = countOf(index, (m) => m.mood === "happy");
+  const mk = (id: string, label: string, desc: string, cur: number, target: number, color: string): Medal => ({
+    id, label, desc, cur: Math.min(cur, target), target, got: cur >= target, color,
+  });
+  return [
+    mk("review7", "复盘新人", "连续复盘 7 天", reviewS, 7, "#cd7f32"),
+    mk("review30", "月度坚持", "连续复盘 30 天", reviewS, 30, "#e8a33d"),
+    mk("study7", "学有所成", "连续学习打卡 7 天", studyS, 7, "#2c8c99"),
+    mk("fit7", "铁人养成", "连续健身打卡 7 天", fitS, 7, "#d9482b"),
+    mk("total30", "记账达人", "累计记录 30 天", totalDays, 30, "#2e6b54"),
+    mk("sleep7", "好眠之星", "睡眠质量 ≥4 星累计 7 天", goodSleep, 7, "#46639e"),
+    mk("photo10", "生活捕手", "有照片的日子累计 10 天", photoDays, 10, "#a24e9c"),
+    mk("happy10", "阳光体质", "心情「开心」累计 10 天", happyDays, 10, "#e8a33d"),
+  ];
+}
+
+/* ---------------- 标签检索 ---------------- */
+
+export interface TagHit {
+  key: string;
+  label: string;
+  note: string;
+  tags: string[];
+}
+
+export function collectTags(index: LedgerIndex): string[] {
+  const set = new Set<string>();
+  Object.keys(index).forEach((k) => {
+    if (!index[k]?.filled) return;
+    loadDay(k).recordTags.forEach((t) => set.add(t));
+  });
+  return [...set].sort();
+}
+
+export function tagSearch(index: LedgerIndex, q: string): TagHit[] {
+  const query = q.trim().replace(/^#/, "").toLowerCase();
+  if (!query) return [];
+  const hits: TagHit[] = [];
+  Object.keys(index)
+    .sort()
+    .reverse()
+    .forEach((k) => {
+      if (!index[k]?.filled) return;
+      const d = loadDay(k);
+      const tagMatch = d.recordTags.some((t) => t.toLowerCase().includes(query));
+      const noteMatch = d.recordNote.toLowerCase().includes(query);
+      if (tagMatch || noteMatch) {
+        const dt = parseKey(k);
+        hits.push({
+          key: k,
+          label: `${dt.getMonth() + 1}月${dt.getDate()}日`,
+          note: d.recordNote,
+          tags: d.recordTags,
+        });
       }
     });
-    tasksTotal += d.workItems.length;
-    tasksDone += d.workItems.filter((w) => w.done).length;
-    d.studyItems.forEach((si) => {
-      studyPlan += si.planMin || 0;
-      studyActual += si.actualMin || 0;
+  return hits.slice(0, 30);
+}
+
+/* ---------------- 图片压缩 ---------------- */
+
+export function compressImage(file: File, max = 1000, quality = 0.78): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("canvas unavailable"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    img.src = url;
+  });
+}
+
+/* ---------------- 导出 ---------------- */
+
+export function exportAll(): string {
+  const out: Record<string, unknown> = { app: "day-ledger", version: 2, exportedAt: new Date().toISOString(), days: {} };
+  Object.keys(localStorage)
+    .filter((k) => k.startsWith(DATA_PREFIX))
+    .forEach((k) => {
+      try {
+        (out.days as Record<string, unknown>)[k.slice(DATA_PREFIX.length)] = JSON.parse(
+          localStorage.getItem(k) || "null"
+        );
+      } catch {
+        /* skip */
+      }
     });
-    if (d.fitness.actual.trim() || d.fitness.plan.trim()) fitnessDays++;
-    if (d.mood) moodCounts[d.mood]++;
-  });
-
-  const moduleAvg = MODULE_KEYS.map((k) => ({
-    key: k,
-    value: moduleAvgSafe(moduleSum[k]),
-  }));
-  const scored = moduleAvg.filter((x) => x.value >= 0);
-  const weakest = scored.length ? scored.reduce((a, b) => (b.value < a.value ? b : a)).key : null;
-
-  return {
-    avg: filled ? Math.round(scoreSum / filled) : null,
-    best,
-    filledDays: filled,
-    tasksDone,
-    tasksTotal,
-    studyPlan,
-    studyActual,
-    fitnessDays,
-    moodCounts,
-    moduleAvg,
-    weakest,
-  };
+  (out as Record<string, unknown>).settings = loadSettings();
+  return JSON.stringify(out, null, 2);
 }
 
-function moduleAvgSafe(s: { sum: number; n: number }): number {
-  return s.n ? Math.round(s.sum / s.n) : -1;
+export interface ImportResult {
+  ok: boolean;
+  count: number;
+  error?: string;
 }
 
-/* ---------------- 导出 / 导入 ---------------- */
-
-export function toMarkdown(d: DayData, date: Date): string {
-  const sc = computeScore(d);
-  const m = moodOf(d.mood);
-  const w = WEATHERS.find((x) => x.key === d.weather);
-  const part = (k: ModuleKey) => sc.parts.find((p) => p.key === k)?.score ?? 0;
-  const L: string[] = [];
-  L.push(`# ${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 · 一日手账`);
-  L.push("");
-  L.push(`> 状态评分：**${sc.total} / 100** · ${encouragement(sc.total)}`);
-  const meta: string[] = [];
-  if (w) meta.push(`天气：${w.label}`);
-  if (d.place.trim()) meta.push(`地点：${d.place.trim()}`);
-  if (meta.length) L.push(`> ${meta.join(" · ")}`);
-  L.push("");
-
-  L.push(`## 工作（${part("work")} 分）`);
-  if (d.workItems.length)
-    d.workItems.forEach((i) => L.push(`- [${i.done ? "x" : " "}] ${i.text}`));
-  else L.push("- （未记录）");
-  if (d.workNote.trim()) L.push(`> 复盘：${d.workNote.trim()}`);
-  L.push("");
-
-  L.push(`## 学习（${part("study")} 分）`);
-  if (d.studyItems.length) {
-    L.push("| 科目 | 规划(分) | 实际(分) | 检查 |");
-    L.push("| --- | --- | --- | --- |");
-    d.studyItems.forEach((i) =>
-      L.push(
-        `| ${i.subject || "未命名"} | ${i.planMin || "—"} | ${i.actualMin || "—"} | ${i.checked ? "已检查" : "未检查"} |`
-      )
-    );
-  } else L.push("- （未记录）");
-  if (d.studyNote.trim()) L.push(`> ${d.studyNote.trim()}`);
-  L.push("");
-
-  const s = d.sleep;
-  L.push(`## 睡眠（${part("sleep")} 分）`);
-  L.push(`- 昨晚计划：${s.planBed && s.planWake ? `${s.planBed} – ${s.planWake}` : "未记录"}`);
-  L.push(
-    `- 实际睡眠：${s.actBed && s.actWake ? `${s.actBed} – ${s.actWake}（${fmtDur(sleepSpan(s.actBed, s.actWake))}）` : "未记录"}`
-  );
-  L.push(`- 明日规划：${s.nextBed && s.nextWake ? `${s.nextBed} – ${s.nextWake}` : "未规划"}`);
-  L.push("");
-
-  L.push(`## 健身（${part("fitness")} 分）`);
-  L.push(`- 规划：${d.fitness.plan.trim() || "未记录"}`);
-  L.push(`- 实际：${d.fitness.actual.trim() || "未记录"}`);
-  L.push(`- 下一步：${d.fitness.next.trim() || "未规划"}`);
-  L.push("");
-
-  L.push(`## 生活 · 衣食住行（${part("life")} 分）`);
-  L.push(`- 食：${d.life.food.trim() || "—"}`);
-  L.push(`- 衣：${d.life.clothing.trim() || "—"}`);
-  L.push(`- 住：${d.life.home.trim() || "—"}`);
-  L.push(`- 行：${d.life.transport.trim() || "—"}`);
-  L.push("");
-
-  L.push(`## 活动（${part("activities")} 分）`);
-  if (d.activities.length)
-    d.activities.forEach((a) => L.push(`- ${a.type}${a.note.trim() ? `：${a.note.trim()}` : ""}`));
-  else L.push("- （未记录）");
-  L.push("");
-
-  L.push(`## 生活记录（${part("records")} 分）`);
-  const recs: string[] = [];
-  if (d.records.vlog) recs.push("Vlog");
-  if (d.records.photo) recs.push("拍照");
-  if (d.records.social) recs.push("社交");
-  if (d.records.showcase) recs.push("展示面");
-  L.push(`- 打卡：${recs.length ? recs.join("、") : "无"}`);
-  if (d.recordNote.trim()) L.push(`- 灵感：${d.recordNote.trim()}`);
-  L.push("");
-
-  L.push(`## 个人形象（${part("image")} 分）`);
-  (
-    [
-      ["护肤", d.image.skincare],
-      ["发型", d.image.hair],
-      ["穿搭", d.image.outfit],
-    ] as [string, ImageRow][]
-  ).forEach(([name, r]) => {
-    L.push(`### ${name}`);
-    L.push(`- 学习：${r.learn.trim() || "—"}`);
-    L.push(`- 实际：${r.actual.trim() || "—"}`);
-    L.push(`- 下一步：${r.next.trim() || "—"}`);
-  });
-  L.push("");
-
-  L.push(`## 心情（${part("mood")} 分）`);
-  L.push(`- 心情：${m ? m.label : "未选择"} · 能量 ${d.energy}/10`);
-  if (d.moodNote.trim()) L.push(`> ${d.moodNote.trim()}`);
-  L.push("");
-
-  if (d.selfScore > 0) L.push(`**自评：${d.selfScore} / 10 分**`);
-  return L.join("\n");
-}
-
-export function exportAll(): void {
-  const idx = loadIndex();
-  const days: Record<string, DayData> = {};
-  Object.keys(idx).forEach((k) => {
-    days[k] = loadDay(k);
-  });
-  const payload = {
-    app: "day-ledger",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    days,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `一日手账-备份-${todayKey()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-export function importAll(json: string): number {
-  const obj = JSON.parse(json) as { days?: Record<string, unknown> };
-  const days = obj?.days;
-  if (!days || typeof days !== "object") throw new Error("invalid backup file");
-  let n = 0;
-  Object.entries(days).forEach(([k, v]) => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v && typeof v === "object") {
-      saveDay(k, { ...emptyDay(), ...(v as Partial<DayData>) });
-      n++;
-    }
-  });
-  return n;
+export function importAll(json: string): ImportResult {
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const days = parsed.days as Record<string, unknown> | undefined;
+    if (!days || typeof days !== "object") return { ok: false, count: 0, error: "文件格式不正确" };
+    let count = 0;
+    Object.entries(days).forEach(([k, v]) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) {
+        localStorage.setItem(DATA_PREFIX + k, JSON.stringify(v));
+        count++;
+      }
+    });
+    if (parsed.settings) saveSettings(parsed.settings as Settings);
+    const idx = loadIndex();
+    Object.keys(days).forEach((k) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) {
+        const d = loadDay(k);
+        idx[k] = {
+          score: computeScore(d).total,
+          filled: hasContent(d),
+          mood: d.mood,
+          study: d.studyItems.some((i) => i.actualMin > 0 || i.checked),
+          fit: !!d.fitness.actual.trim(),
+          q: d.sleep.quality,
+          photo: d.photos.length > 0 || d.records.photo || !!d.outfitPhoto,
+        };
+      }
+    });
+    localStorage.setItem(INDEX_KEY, JSON.stringify(idx));
+    return { ok: true, count };
+  } catch (e) {
+    return { ok: false, count: 0, error: e instanceof Error ? e.message : "解析失败" };
+  }
 }
